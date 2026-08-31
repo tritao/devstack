@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from tools.devstack.core.adapters import try_load_adapter
-from tools.devstack.core.build_root import ensure_external_build_dir
+from tools.devstack.core.build_root import ensure_external_build_preset
 from tools.devstack.core.cmake_presets import (
     cache_var_is_set,
     ensure_basic_presets,
@@ -131,7 +131,8 @@ def cmd_build(args: argparse.Namespace) -> None:
         note(f"loading env: {env_path}")
         env = load_env_from_sh(env_path, env)
 
-    ensure_external_build_dir(root, env)
+    if not build_dir:
+        preset = ensure_external_build_preset(root, preset, env)
 
     if ccache_dir:
         env["CCACHE_DIR"] = ccache_dir

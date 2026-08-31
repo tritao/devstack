@@ -35,9 +35,9 @@ ds update
 ```
 
 To keep generated build trees outside source worktrees, set an absolute shared
-parent such as `DEVSTACK_BUILD_ROOT=/mnt/builds`. Devstack links each
-worktree's `build` path to `$DEVSTACK_BUILD_ROOT/<worktree-name>` during
-`ds init` or `ds build`.
+parent such as `DEVSTACK_BUILD_ROOT=/mnt/builds`. Devstack generates wrapper
+CMake presets storing each binary tree below
+`$DEVSTACK_BUILD_ROOT/<worktree-name>/<preset>` during `ds build`.
 
 Stack configuration and generated PR bodies remain local to each target
 worktree under `.devstack/`. The standalone checkout supplies the executable;

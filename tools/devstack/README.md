@@ -152,11 +152,10 @@ Keep build artifacts outside source worktrees by setting a shared parent directo
 export DEVSTACK_BUILD_ROOT=/mnt/builds
 ```
 
-`devstack init` and `devstack build` then create
-`<worktree>/build -> $DEVSTACK_BUILD_ROOT/<worktree-name>`. Existing matching
-links are reused. Devstack refuses to replace a real `build` directory or a
-link to a different target; migrate that data explicitly before enabling the
-setting. The build root must be an absolute path.
+`devstack build` then generates a local wrapper preset whose native CMake
+binary directory is `$DEVSTACK_BUILD_ROOT/<worktree-name>/<preset>`. This
+avoids symlinks and keeps generated paths internally consistent. The build
+root must be an absolute path.
 
 Reduced “core” build (FreeCAD adapter):
 
@@ -286,6 +285,8 @@ For example, machine-wide external build storage can be configured with:
 ```bash
 export DEVSTACK_BUILD_ROOT=/mnt/builds
 ```
+
+Each preset is stored below `$DEVSTACK_BUILD_ROOT/<worktree-name>/<preset>`.
 
 Env-file precedence (first match wins):
 
