@@ -15,6 +15,7 @@ from tools.devstack.core.git import (
     repo_root,
     sanitize_branch_to_conf_name,
 )
+from tools.devstack.core.env import load_env_from_sh
 from tools.devstack.core.proc import die, note, run
 from tools.devstack.core.stackconf import default_body_dir, read_conf, stack_name_from_conf
 
@@ -342,6 +343,64 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
         str(dir_path),
     ]
     run(create_args, cwd=golden)
+
+
+def cmd_wt_remove(args: argparse.Namespace) -> None:
+    root = repo_root()
+    requested = Path(args.dir).expanduser().resolve() if args.dir else None
+    matches = [
+        path
+        for path in worktree_list_paths(root)
+        if (requested is not None and path == requested)
+        or (requested is None and path.name == sanitize_branch_to_conf_name(args.name))
+    ]
+    if not matches:
+        die(f"no registered worktree found for: {requested or args.name}")
+    if len(matches) != 1:
+        die(f"multiple worktrees match {args.name}; select one with --dir")
+    worktree = matches[0]
+    if worktree == root:
+        die("refusing to remove the current worktree; run this command from the golden checkout")
+
+    branch = current_branch(worktree)
+    dirty = git(["status", "--porcelain", "--untracked-files=all"], cwd=worktree)
+    if dirty and not args.force:
+        die(f"worktree has uncommitted changes: {worktree}\n{dirty}\nUse --force only if these changes can be discarded.")
+
+    env = dict(os.environ)
+    env_file = Path.home() / ".config" / "devstack" / "env.sh"
+    if env_file.is_file():
+        env = load_env_from_sh(env_file, env)
+    configured = env.get("DEVSTACK_BUILD_ROOT", "").strip()
+    build_dir: Path | None = None
+    if configured and not args.keep_build:
+        build_root = Path(configured).expanduser()
+        if not build_root.is_absolute():
+            die("DEVSTACK_BUILD_ROOT must be absolute before build data can be removed")
+        build_root = build_root.resolve()
+        build_dir = build_root / worktree.name
+        if build_dir.parent != build_root or build_dir == build_root:
+            die(f"refusing unsafe build path: {build_dir}")
+        if build_dir.is_symlink():
+            die(f"refusing to recursively remove symlinked build path: {build_dir}")
+
+    print("removing worktree:")
+    print(f"  path:   {worktree}")
+    print(f"  branch: {branch or '(detached)'}{' (delete)' if args.delete_branch and branch else ' (keep)'}")
+    if build_dir:
+        print(f"  build:  {build_dir}")
+
+    remove_cmd = ["git", "worktree", "remove"]
+    if args.force:
+        remove_cmd.append("--force")
+    remove_cmd.append(str(worktree))
+    run(remove_cmd, cwd=root)
+
+    if build_dir and build_dir.exists():
+        shutil.rmtree(build_dir)
+        print(f"removed build data: {build_dir}")
+    if args.delete_branch and branch:
+        run(["git", "branch", "-D" if args.force else "-d", branch], cwd=root)
 
 
 def cmd_wt_add(args: argparse.Namespace) -> None:

@@ -119,6 +119,15 @@ with Clang+mold and ccache, and creates `feature/my-feature` under the sibling
 `<repo>-worktrees` directory. Override with `--golden-dir`, `--remote`,
 `--main-branch`, `--branch`, `--dir`, `--preset`, or `--jobs`.
 
+Remove a completed worktree and its external build data:
+
+```bash
+ds wt-remove my-feature
+```
+
+Branches are kept unless `--delete-branch` is supplied. Use `--keep-build` to
+retain build artifacts. Dirty worktrees require an explicit `--force`.
+
 Create a new worktree for a new branch:
 
 ```bash

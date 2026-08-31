@@ -46,6 +46,16 @@ Clang+mold build with ccache, and then creates `feature/my-feature`. It refuses
 dirty or non-`main` golden checkouts. Use `--golden-dir`, `--remote`,
 `--main-branch`, `--branch`, or `--dir` to override the defaults.
 
+When a task is finished, remove its worktree and external build data with:
+
+```bash
+ds wt-remove my-feature
+```
+
+The local branch is preserved by default. Add `--delete-branch` to delete it,
+or `--keep-build` to retain its build data. Dirty worktrees are refused unless
+`--force` is explicitly supplied.
+
 To keep generated build trees outside source worktrees, set an absolute shared
 parent such as `DEVSTACK_BUILD_ROOT=/mnt/builds`. Devstack generates wrapper
 CMake presets storing each binary tree below

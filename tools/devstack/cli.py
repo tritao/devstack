@@ -23,7 +23,7 @@ from tools.devstack.commands.stack import (
     cmd_rebase,
     cmd_update,
 )
-from tools.devstack.commands.worktrees import cmd_init, cmd_wt_add, cmd_wt_feature, cmd_wt_fresh, cmd_wt_layer, cmd_wt_sync
+from tools.devstack.commands.worktrees import cmd_init, cmd_wt_add, cmd_wt_feature, cmd_wt_fresh, cmd_wt_layer, cmd_wt_remove, cmd_wt_sync
 
 class CategorizedArgumentParser(argparse.ArgumentParser):
     command_groups: list[tuple[str, list[tuple[str, str]]]]
@@ -214,6 +214,17 @@ def build_parser() -> argparse.ArgumentParser:
     wtf.add_argument("--dir", help="Worktree path (default: <golden-parent>/<repo>-worktrees/<name>).")
     wtf.add_argument("--preset", default="debug", help="Golden build preset (default: debug).")
     wtf.add_argument("--jobs", "-j", type=int, default=None, help="Golden build jobs (default: auto).")
+
+    wtr = cmd(
+        "wt-remove",
+        "Safely remove a worktree and its external build data.",
+        category="Worktrees",
+    )
+    wtr.add_argument("name")
+    wtr.add_argument("--dir", help="Exact registered worktree path (use when names are ambiguous).")
+    wtr.add_argument("--keep-build", action="store_true", help="Keep external build data.")
+    wtr.add_argument("--delete-branch", action="store_true", help="Delete the local branch after removing the worktree.")
+    wtr.add_argument("--force", action="store_true", help="Discard dirty worktree changes; with --delete-branch, force branch deletion.")
 
     wta = cmd(
         "wt-add",
@@ -437,6 +448,8 @@ def main(argv: list[str]) -> None:
             cmd_wt_feature(ns)
         elif cmd == "wt-fresh":
             cmd_wt_fresh(ns)
+        elif cmd == "wt-remove":
+            cmd_wt_remove(ns)
         elif cmd == "wt-add":
             cmd_wt_add(ns)
         elif cmd == "wt-sync":
