@@ -107,6 +107,18 @@ Uninstall:
 
 ### Worktrees
 
+Refresh and build a pristine golden checkout before creating a feature
+worktree (the worktree is created only after a successful build):
+
+```bash
+ds wt-fresh my-feature
+```
+
+By default this rebases `main` onto `upstream/main`, builds the `debug` preset
+with Clang+mold and ccache, and creates `feature/my-feature` under the sibling
+`<repo>-worktrees` directory. Override with `--golden-dir`, `--remote`,
+`--main-branch`, `--branch`, `--dir`, `--preset`, or `--jobs`.
+
 Create a new worktree for a new branch:
 
 ```bash

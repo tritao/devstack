@@ -34,6 +34,18 @@ ds list
 ds update
 ```
 
+To refresh and build a pristine golden checkout before creating a worktree:
+
+```bash
+cd /path/to/FreeCAD-master
+ds wt-fresh my-feature
+```
+
+This fetches `upstream/main`, rebases the golden `main`, completes its
+Clang+mold build with ccache, and then creates `feature/my-feature`. It refuses
+dirty or non-`main` golden checkouts. Use `--golden-dir`, `--remote`,
+`--main-branch`, `--branch`, or `--dir` to override the defaults.
+
 To keep generated build trees outside source worktrees, set an absolute shared
 parent such as `DEVSTACK_BUILD_ROOT=/mnt/builds`. Devstack generates wrapper
 CMake presets storing each binary tree below

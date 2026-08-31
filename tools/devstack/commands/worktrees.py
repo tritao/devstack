@@ -210,6 +210,12 @@ def cmd_wt_feature(args: argparse.Namespace) -> None:
     dir_path = Path(args.dir).resolve() if args.dir else (root.parent / f"{series}-wt-{safe}").resolve()
     if dir_path.exists():
         die(f"worktree path already exists: {dir_path}")
+    try:
+        git(["show-ref", "--verify", f"refs/heads/{feature_branch}"], cwd=golden)
+    except subprocess.CalledProcessError:
+        pass
+    else:
+        die(f"feature branch already exists: {feature_branch}")
 
     print("creating worktree:")
     print(f"  branch: {branch}")
@@ -273,6 +279,69 @@ def cmd_wt_feature(args: argparse.Namespace) -> None:
     print(f"  cd {dir_path}")
     print("  ds list")
     print(f"  # or: python3 {devstack_py} list")
+
+
+def cmd_wt_fresh(args: argparse.Namespace) -> None:
+    """Refresh and build a pristine baseline before creating a feature worktree."""
+    current_root = repo_root()
+    golden = Path(args.golden_dir).expanduser().resolve() if args.golden_dir else current_root
+    golden = repo_root(golden)
+    remote = args.remote
+    main_branch = args.main_branch
+
+    dirty = git(["status", "--porcelain", "--untracked-files=all"], cwd=golden)
+    if dirty:
+        die(f"golden checkout is not pristine: {golden}\n{dirty}")
+    branch_now = current_branch(golden)
+    if branch_now != main_branch:
+        die(f"golden checkout must be on {main_branch}, currently on {branch_now or 'detached HEAD'}")
+
+    name = args.name
+    feature_branch = args.branch or f"feature/{name}"
+    safe = sanitize_branch_to_conf_name(name)
+    series = golden.name.removesuffix("-master")
+    configured_root = os.environ.get("DEVSTACK_WORKTREE_ROOT", "").strip()
+    worktree_root = Path(configured_root).expanduser().resolve() if configured_root else golden.parent / f"{series}-worktrees"
+    dir_path = Path(args.dir).expanduser().resolve() if args.dir else (worktree_root / safe).resolve()
+    if dir_path.exists():
+        die(f"worktree path already exists: {dir_path}")
+
+    devstack_py = (Path(__file__).resolve().parents[1] / "devstack.py").resolve()
+    print("refreshing golden checkout:")
+    print(f"  path:   {golden}")
+    print(f"  update: {main_branch} onto {remote}/{main_branch}")
+    run(["git", "fetch", remote, main_branch], cwd=golden)
+    run(["git", "rebase", f"{remote}/{main_branch}"], cwd=golden)
+
+    build_args = [
+        "python3",
+        str(devstack_py),
+        "build",
+        "--preset",
+        args.preset,
+        "--toolchain",
+        "clang-mold",
+        "--ccache-launcher",
+    ]
+    if args.jobs is not None:
+        build_args += ["--jobs", str(args.jobs)]
+    run(build_args, cwd=golden)
+
+    # Creating the worktree is deliberately last: update or build failures leave
+    # no half-created feature checkout behind.
+    create_args = [
+        "python3",
+        str(devstack_py),
+        "wt-init",
+        name,
+        "--base",
+        "HEAD",
+        "--branch",
+        feature_branch,
+        "--dir",
+        str(dir_path),
+    ]
+    run(create_args, cwd=golden)
 
 
 def cmd_wt_add(args: argparse.Namespace) -> None:

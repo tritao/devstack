@@ -23,7 +23,7 @@ from tools.devstack.commands.stack import (
     cmd_rebase,
     cmd_update,
 )
-from tools.devstack.commands.worktrees import cmd_init, cmd_wt_add, cmd_wt_feature, cmd_wt_layer, cmd_wt_sync
+from tools.devstack.commands.worktrees import cmd_init, cmd_wt_add, cmd_wt_feature, cmd_wt_fresh, cmd_wt_layer, cmd_wt_sync
 
 class CategorizedArgumentParser(argparse.ArgumentParser):
     command_groups: list[tuple[str, list[tuple[str, str]]]]
@@ -200,6 +200,20 @@ def build_parser() -> argparse.ArgumentParser:
     wti.add_argument("--jobs", "-j", type=int, default=None, help="Build jobs (-j). Default: auto.")
     wti.add_argument("--target")
     wti.add_argument("--clean", action="store_true")
+
+    wtf = cmd(
+        "wt-fresh",
+        "Update and build a pristine golden checkout, then create a feature worktree from it.",
+        category="Worktrees",
+    )
+    wtf.add_argument("name")
+    wtf.add_argument("--golden-dir", help="Golden checkout (default: current repository).")
+    wtf.add_argument("--remote", default="upstream", help="Upstream remote (default: upstream).")
+    wtf.add_argument("--main-branch", default="main", help="Golden branch (default: main).")
+    wtf.add_argument("--branch", help="Feature branch (default: feature/<name>).")
+    wtf.add_argument("--dir", help="Worktree path (default: <golden-parent>/<repo>-worktrees/<name>).")
+    wtf.add_argument("--preset", default="debug", help="Golden build preset (default: debug).")
+    wtf.add_argument("--jobs", "-j", type=int, default=None, help="Golden build jobs (default: auto).")
 
     wta = cmd(
         "wt-add",
@@ -421,6 +435,8 @@ def main(argv: list[str]) -> None:
             cmd_init(ns)
         elif cmd == "wt-init":
             cmd_wt_feature(ns)
+        elif cmd == "wt-fresh":
+            cmd_wt_fresh(ns)
         elif cmd == "wt-add":
             cmd_wt_add(ns)
         elif cmd == "wt-sync":
