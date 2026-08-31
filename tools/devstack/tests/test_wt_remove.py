@@ -37,7 +37,10 @@ class TestWtRemove(unittest.TestCase):
                 patch("tools.devstack.commands.worktrees.worktree_list_paths", return_value=[golden, worktree]),
                 patch("tools.devstack.commands.worktrees.current_branch", return_value="feature/my-fix"),
                 patch("tools.devstack.commands.worktrees.git", return_value=""),
-                patch("tools.devstack.commands.worktrees.load_env_from_sh", return_value={"DEVSTACK_BUILD_ROOT": str(build_root)}),
+                patch(
+                    "tools.devstack.commands.worktrees.load_devstack_env",
+                    return_value={"DEVSTACK_BUILD_ROOT": str(build_root)},
+                ),
                 patch("tools.devstack.commands.worktrees.run") as run,
                 patch("tools.devstack.commands.worktrees.shutil.rmtree") as rmtree,
             ):

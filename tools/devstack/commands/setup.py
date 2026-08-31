@@ -593,4 +593,118 @@ def cmd_shell_alias(args: argparse.Namespace) -> None:
     print(f"updated: {rc_path}")
     print("\nRestart your shell (or source your rc file) to pick up the alias.")
 
+
+def cmd_machine_setup(args: argparse.Namespace) -> None:
+    golden = Path(args.golden_dir).expanduser().resolve()
+    worktree_root = Path(args.worktree_root).expanduser().resolve()
+    build_root = Path(args.build_root).expanduser().resolve()
+    ccache_dir = Path(args.ccache_dir).expanduser().resolve()
+    for label, path in (
+        ("golden-dir", golden),
+        ("worktree-root", worktree_root),
+        ("build-root", build_root),
+        ("ccache-dir", ccache_dir),
+    ):
+        if not path.is_absolute():
+            die(f"--{label} must be absolute")
+    if not golden.is_dir():
+        die(f"golden checkout does not exist: {golden}")
+    try:
+        git(["rev-parse", "--show-toplevel"], cwd=golden)
+    except subprocess.CalledProcessError:
+        die(f"golden checkout is not a Git repository: {golden}")
+
+    worktree_root.mkdir(parents=True, exist_ok=True)
+    build_root.mkdir(parents=True, exist_ok=True)
+    ccache_dir.mkdir(parents=True, exist_ok=True)
+
+    devstack_py = (Path(__file__).resolve().parents[1] / "devstack.py").resolve()
+    bin_dir = Path(args.bin_dir).expanduser().resolve()
+    ds_path = bin_dir / "ds"
+    _write_file(
+        ds_path,
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "set -euo pipefail",
+                "",
+                f"exec python3 {shlex.quote(str(devstack_py))} \"$@\"",
+                "",
+            ]
+        ),
+    )
+    ds_path.chmod(0o755)
+
+    env_file = Path(args.env_file).expanduser().resolve()
+    ccache_conf = Path(args.ccache_config).expanduser().resolve()
+    _ensure_file_block(
+        env_file,
+        begin="devstack machine setup",
+        end="devstack machine setup",
+        block="\n".join(
+            [
+                f"export DEVSTACK_GOLDEN_ROOT={shlex.quote(str(golden))}",
+                f"export DEVSTACK_WORKTREE_ROOT={shlex.quote(str(worktree_root))}",
+                f"export DEVSTACK_BUILD_ROOT={shlex.quote(str(build_root))}",
+                f"export CCACHE_DIR={shlex.quote(str(ccache_dir))}",
+                f"export CCACHE_CONFIGPATH={shlex.quote(str(ccache_conf))}",
+            ]
+        ),
+    )
+
+    _ensure_file_block(
+        ccache_conf,
+        begin="devstack machine setup",
+        end="devstack machine setup",
+        block=f"cache_dir = {ccache_dir}\nmax_size = {args.ccache_max_size}",
+    )
+
+    common_dir_text = git(["rev-parse", "--git-common-dir"], cwd=golden)
+    common_dir = Path(common_dir_text)
+    if not common_dir.is_absolute():
+        common_dir = (golden / common_dir).resolve()
+    _ensure_file_block(
+        common_dir / "info" / "exclude",
+        begin="devstack generated files",
+        end="devstack generated files",
+        block="/build\n/CMakeUserPresets.json",
+    )
+
+    if not args.no_codex_instructions:
+        codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser().resolve()
+        agents_file = codex_home / "AGENTS.md"
+        _ensure_file_block(
+            agents_file,
+            begin="devstack FreeCAD workflow",
+            end="devstack FreeCAD workflow",
+            block="\n".join(
+                [
+                    "## FreeCAD worktree workflow",
+                    "",
+                    f"These rules apply to `{golden}` and FreeCAD worktrees below `{worktree_root}`.",
+                    "",
+                    f"- Keep `{golden}` as a pristine `main` checkout tracking `upstream/main`; never make feature changes there.",
+                    "- Create tasks from the golden checkout with `ds wt-fresh <task-name>`.",
+                    f"- Perform feature edits, commits, and tests only below `{worktree_root}`.",
+                    "- Build with `ds build --preset debug --ccache-launcher`; do not create source-tree build directories or build symlinks.",
+                    f"- Generated builds belong below `{build_root}/<worktree>/<preset>` and shared ccache data belongs in `{ccache_dir}`.",
+                    "- Remove completed worktrees with `ds wt-remove <task-name>`. Keep branches unless deletion is explicitly requested.",
+                    "- Never use `ds wt-remove --force` without explicit permission to discard uncommitted changes.",
+                    "- Prefer `ds` over raw `git worktree` commands for this lifecycle.",
+                    "- If already inside a feature worktree, continue there; do not refresh golden unless creating a separate task was requested.",
+                ]
+            ),
+        )
+
+    print("machine setup complete:")
+    print(f"  ds:             {ds_path}")
+    print(f"  environment:    {env_file}")
+    print(f"  golden:         {golden}")
+    print(f"  worktrees:      {worktree_root}")
+    print(f"  builds:         {build_root}")
+    print(f"  ccache:         {ccache_dir} ({args.ccache_max_size})")
+    print("tools:")
+    for tool in ("git", "python3", "cmake", "ninja", "clang", "clang++", "mold", "ccache"):
+        print(f"  {tool}: {'yes' if have_cmd(tool) else 'MISSING'}")
+
 # CLI entrypoint is implemented in tools.devstack.cli.

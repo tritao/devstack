@@ -63,6 +63,19 @@ The entrypoint is:
 
 ### Shell alias (global)
 
+For a complete reproducible FreeCAD setup, prefer:
+
+```bash
+python3 tools/devstack/devstack.py machine-setup \
+  --golden-dir /path/to/FreeCAD-master \
+  --worktree-root /path/to/FreeCAD-worktrees \
+  --build-root /large-disk/freecad-builds \
+  --ccache-dir /large-disk/ccache
+```
+
+It installs a non-interactive `ds` executable plus managed Devstack, ccache,
+Git-exclude, and Codex instruction blocks. The operation is idempotent.
+
 Install a global `devstack` function (and optional `ds` shortcut) in your shell:
 
 ```bash

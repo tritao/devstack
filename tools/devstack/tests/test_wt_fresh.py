@@ -37,6 +37,7 @@ class TestWtFresh(unittest.TestCase):
 
             with (
                 patch("tools.devstack.commands.worktrees.repo_root", return_value=golden),
+                patch("tools.devstack.commands.worktrees.load_devstack_env", return_value={}),
                 patch("tools.devstack.commands.worktrees.git", side_effect=fake_git),
                 patch("tools.devstack.commands.worktrees.current_branch", return_value="main"),
                 patch("tools.devstack.commands.worktrees.run") as run,
@@ -61,6 +62,7 @@ class TestWtFresh(unittest.TestCase):
             golden.mkdir()
             with (
                 patch("tools.devstack.commands.worktrees.repo_root", return_value=golden),
+                patch("tools.devstack.commands.worktrees.load_devstack_env", return_value={}),
                 patch("tools.devstack.commands.worktrees.git", return_value=" M source.cpp"),
                 patch("tools.devstack.commands.worktrees.run") as run,
             ):

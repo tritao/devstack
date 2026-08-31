@@ -19,6 +19,25 @@ exec "$SHELL" -l
 ds doctor
 ```
 
+## Reproduce a FreeCAD machine setup
+
+After cloning Devstack and creating the canonical FreeCAD checkout, install all
+machine-local workflow configuration with one idempotent command:
+
+```bash
+python3 tools/devstack/devstack.py machine-setup \
+  --golden-dir /path/to/FreeCAD-master \
+  --worktree-root /path/to/FreeCAD-worktrees \
+  --build-root /large-disk/freecad-builds \
+  --ccache-dir /large-disk/ccache
+```
+
+This installs a real `~/.local/bin/ds` executable and managed configuration
+blocks for Devstack, ccache, Git excludes, and Codex `AGENTS.md`. Re-running the
+command updates those blocks without duplicating them. It creates storage
+directories and reports missing required tools, but leaves OS package
+installation to the host package manager.
+
 `shell-alias` writes a machine-local shell function and the optional `ds`
 shortcut under `~/.config/devstack/`. It records the absolute path to this
 checkout, so rerun it if the checkout moves.

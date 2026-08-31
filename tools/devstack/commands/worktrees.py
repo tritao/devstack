@@ -15,7 +15,7 @@ from tools.devstack.core.git import (
     repo_root,
     sanitize_branch_to_conf_name,
 )
-from tools.devstack.core.env import load_env_from_sh
+from tools.devstack.core.env import load_devstack_env
 from tools.devstack.core.proc import die, note, run
 from tools.devstack.core.stackconf import default_body_dir, read_conf, stack_name_from_conf
 
@@ -285,7 +285,9 @@ def cmd_wt_feature(args: argparse.Namespace) -> None:
 def cmd_wt_fresh(args: argparse.Namespace) -> None:
     """Refresh and build a pristine baseline before creating a feature worktree."""
     current_root = repo_root()
-    golden = Path(args.golden_dir).expanduser().resolve() if args.golden_dir else current_root
+    initial_env = load_devstack_env(root=current_root)
+    configured_golden = initial_env.get("DEVSTACK_GOLDEN_ROOT", "").strip()
+    golden = Path(args.golden_dir or configured_golden).expanduser().resolve() if (args.golden_dir or configured_golden) else current_root
     golden = repo_root(golden)
     remote = args.remote
     main_branch = args.main_branch
@@ -301,7 +303,8 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
     feature_branch = args.branch or f"feature/{name}"
     safe = sanitize_branch_to_conf_name(name)
     series = golden.name.removesuffix("-master")
-    configured_root = os.environ.get("DEVSTACK_WORKTREE_ROOT", "").strip()
+    machine_env = load_devstack_env(root=golden)
+    configured_root = machine_env.get("DEVSTACK_WORKTREE_ROOT", "").strip()
     worktree_root = Path(configured_root).expanduser().resolve() if configured_root else golden.parent / f"{series}-worktrees"
     dir_path = Path(args.dir).expanduser().resolve() if args.dir else (worktree_root / safe).resolve()
     if dir_path.exists():
@@ -346,7 +349,10 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
 
 
 def cmd_wt_remove(args: argparse.Namespace) -> None:
-    root = repo_root()
+    current_root = repo_root()
+    initial_env = load_devstack_env(root=current_root)
+    configured_golden = initial_env.get("DEVSTACK_GOLDEN_ROOT", "").strip()
+    root = repo_root(Path(configured_golden).expanduser().resolve()) if configured_golden else current_root
     requested = Path(args.dir).expanduser().resolve() if args.dir else None
     matches = [
         path
@@ -367,10 +373,7 @@ def cmd_wt_remove(args: argparse.Namespace) -> None:
     if dirty and not args.force:
         die(f"worktree has uncommitted changes: {worktree}\n{dirty}\nUse --force only if these changes can be discarded.")
 
-    env = dict(os.environ)
-    env_file = Path.home() / ".config" / "devstack" / "env.sh"
-    if env_file.is_file():
-        env = load_env_from_sh(env_file, env)
+    env = load_devstack_env(root=root)
     configured = env.get("DEVSTACK_BUILD_ROOT", "").strip()
     build_dir: Path | None = None
     if configured and not args.keep_build:

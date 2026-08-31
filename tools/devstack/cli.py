@@ -6,13 +6,14 @@ import shlex
 import subprocess
 import sys
 from collections import OrderedDict
+from pathlib import Path
 
 from tools.devstack.core.proc import die
 from tools.devstack.commands.bodies import cmd_body_context, cmd_body_prune, cmd_body_refresh
 from tools.devstack.commands.build import cmd_build
 from tools.devstack.commands.github import cmd_gh_sync, cmd_pr_layer, cmd_push
 from tools.devstack.commands.lint import cmd_fix, cmd_lint
-from tools.devstack.commands.setup import cmd_doctor, cmd_provision, cmd_self_check, cmd_shell_alias, cmd_test
+from tools.devstack.commands.setup import cmd_doctor, cmd_machine_setup, cmd_provision, cmd_self_check, cmd_shell_alias, cmd_test
 from tools.devstack.commands.stack import (
     cmd_capture,
     cmd_extract,
@@ -396,6 +397,20 @@ def build_parser() -> argparse.ArgumentParser:
     sa.add_argument("--no-short", action="store_true", help="Do not create the ds shortcut")
     sa.add_argument("--no-rc", action="store_true", help="Do not edit your shell rc file; just print instructions")
     sa.add_argument("--rc-file", help="Override rc file path")
+    ms = cmd(
+        "machine-setup",
+        "Install reproducible machine-local Devstack, build, ccache, and Codex configuration.",
+        category="Setup",
+    )
+    ms.add_argument("--golden-dir", required=True, help="Canonical pristine checkout.")
+    ms.add_argument("--worktree-root", required=True, help="Directory containing feature worktrees.")
+    ms.add_argument("--build-root", required=True, help="External build storage root.")
+    ms.add_argument("--ccache-dir", required=True, help="Shared ccache storage directory.")
+    ms.add_argument("--ccache-max-size", default="20G", help="ccache size limit (default: 20G).")
+    ms.add_argument("--bin-dir", default=str(Path.home() / ".local" / "bin"), help="Directory for the ds executable.")
+    ms.add_argument("--env-file", default=str(Path.home() / ".config" / "devstack" / "env.sh"))
+    ms.add_argument("--ccache-config", default=str(Path.home() / ".config" / "ccache" / "ccache.conf"))
+    ms.add_argument("--no-codex-instructions", action="store_true", help="Do not update $CODEX_HOME/AGENTS.md.")
     d.add_argument("--adapter", default=os.environ.get("DEVSTACK_ADAPTER", "auto"))
 
     # Populate categorized help list.
@@ -434,6 +449,8 @@ def main(argv: list[str]) -> None:
             cmd_provision(ns)
         elif cmd == "shell-alias":
             cmd_shell_alias(ns)
+        elif cmd == "machine-setup":
+            cmd_machine_setup(ns)
         elif cmd == "rebase":
             cmd_rebase(ns)
         elif cmd == "body-refresh":
