@@ -15,6 +15,7 @@ from tools.devstack.core.git import (
     repo_root,
     sanitize_branch_to_conf_name,
 )
+from tools.devstack.core.build_root import ensure_external_build_dir
 from tools.devstack.core.proc import die, note, run
 from tools.devstack.core.stackconf import default_body_dir, read_conf, stack_name_from_conf
 
@@ -94,6 +95,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         note("init: --copy/--symlink/--force-script are deprecated and are now ignored")
 
     conf_path = _ensure_stack_conf_and_bodies_dir(root, force_conf=force_conf, quiet=False)
+    ensure_external_build_dir(root)
 
     print()
     print("next:")

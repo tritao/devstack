@@ -34,6 +34,11 @@ ds list
 ds update
 ```
 
+To keep generated build trees outside source worktrees, set an absolute shared
+parent such as `DEVSTACK_BUILD_ROOT=/mnt/builds`. Devstack links each
+worktree's `build` path to `$DEVSTACK_BUILD_ROOT/<worktree-name>` during
+`ds init` or `ds build`.
+
 Stack configuration and generated PR bodies remain local to each target
 worktree under `.devstack/`. The standalone checkout supplies the executable;
 it does not own the target project's stack state.

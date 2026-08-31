@@ -146,6 +146,18 @@ Build the current worktree using CMake presets:
 ./tools/devstack/devstack.sh build --preset debug
 ```
 
+Keep build artifacts outside source worktrees by setting a shared parent directory:
+
+```bash
+export DEVSTACK_BUILD_ROOT=/mnt/builds
+```
+
+`devstack init` and `devstack build` then create
+`<worktree>/build -> $DEVSTACK_BUILD_ROOT/<worktree-name>`. Existing matching
+links are reused. Devstack refuses to replace a real `build` directory or a
+link to a different target; migrate that data explicitly before enabling the
+setting. The build root must be an absolute path.
+
 Reduced “core” build (FreeCAD adapter):
 
 ```bash
@@ -268,6 +280,12 @@ Other checks:
 ### Machine-local environment (`.devstack/env.sh` / `~/.config/devstack/env.sh`)
 
 If an env file exists, `build` will source it (via `bash`) and apply those environment variables to configure/build.
+
+For example, machine-wide external build storage can be configured with:
+
+```bash
+export DEVSTACK_BUILD_ROOT=/mnt/builds
+```
 
 Env-file precedence (first match wins):
 
