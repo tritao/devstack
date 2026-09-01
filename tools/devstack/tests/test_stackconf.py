@@ -45,6 +45,7 @@ class TestStackConf(unittest.TestCase):
                         "base origin/main",
                         "pr_prefix pr/my-series/",
                         "body_dir .devstack/pr-bodies/my-series",
+                        "body_template .devstack/pr-body-template.md",
                         "ignore deadbeef",
                         "",
                         f"001-one {sha1}",
@@ -59,6 +60,7 @@ class TestStackConf(unittest.TestCase):
             self.assertEqual(conf.base_remote_ref, "origin/main")
             self.assertEqual(conf.pr_prefix, "pr/my-series/")
             self.assertEqual(conf.body_dir, ".devstack/pr-bodies/my-series")
+            self.assertEqual(conf.body_template, ".devstack/pr-body-template.md")
             self.assertEqual(conf.github_mode, "chained")
             self.assertTrue(filtered_mode(conf))
             self.assertEqual(conf.ignore, ["deadbeef"])

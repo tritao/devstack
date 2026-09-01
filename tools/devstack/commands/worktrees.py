@@ -50,6 +50,7 @@ def _ensure_stack_conf_and_bodies_dir(root: Path, *, force_conf: bool, quiet: bo
                     "#   base <remote>/<branch>         Base branch for the first PR (default: origin/main)",
                     "#   pr_prefix <prefix/>            Prefix to apply to branch keys (optional)",
                     "#   body_dir <path>                PR body directory for this stack (optional)",
+                    "#   body_template <path>           Template for newly created PR bodies (optional)",
                     "#   github_mode chained|native     GitHub publication backend (default: chained)",
                     "#   github_repo <owner/repo>        Explicit target repository (optional)",
                     "#   push_remote <remote>            Remote that owns PR branches (optional)",

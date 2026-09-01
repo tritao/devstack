@@ -75,9 +75,24 @@ def autogen_block(
 AUTOGEN_RE = re.compile(r"<!-- AUTOGEN:BEGIN -->[\s\S]*?<!-- AUTOGEN:END -->", re.MULTILINE)
 
 
-def update_body_file(body_path: Path, autogen: str, *, title: str = "") -> None:
+def update_body_file(
+    body_path: Path,
+    autogen: str,
+    *,
+    title: str = "",
+    template_path: Path | None = None,
+) -> None:
     if not body_path.exists():
         body_path.parent.mkdir(parents=True, exist_ok=True)
+        if template_path is not None:
+            if not template_path.is_file():
+                die(f"PR body template does not exist: {template_path}")
+            content = template_path.read_text(encoding="utf-8", errors="replace")
+            content = content.replace("{{ title }}", json.dumps(title))
+            content = content.replace("{{ autogen }}", autogen)
+            body_path.write_text(content.rstrip() + "\n", encoding="utf-8")
+            print(f"created {body_path} from {template_path}")
+            return
         frontmatter = ""
         if title:
             frontmatter = "\n".join(["---", f"title: {json.dumps(title)}", "---", ""])
@@ -88,8 +103,6 @@ def update_body_file(body_path: Path, autogen: str, *, title: str = "") -> None:
                 "## Why",
                 "",
                 "## Changes",
-                "",
-                "## Testing",
                 "",
                 autogen,
                 "",
@@ -114,6 +127,14 @@ def update_body_file(body_path: Path, autogen: str, *, title: str = "") -> None:
 def cmd_body_refresh(args: argparse.Namespace) -> None:
     root = repo_root()
     conf = read_conf(root)
+    template_path = None
+    if conf.body_template:
+        configured_template = Path(conf.body_template)
+        template_path = (
+            configured_template
+            if configured_template.is_absolute()
+            else (root / configured_template).resolve()
+        )
     base_display = base_branch_name(conf.base_remote_ref)
     prev = conf.base_remote_ref
     pr_base = base_display
@@ -143,7 +164,7 @@ def cmd_body_refresh(args: argparse.Namespace) -> None:
             die(f"missing body file for {entry.branch}: {body_path}")
         raw_title = git(["show", "-s", "--format=%s", to_ref], cwd=root) or entry.branch
         title = title_with_number(raw_title, key_number(entry.key))
-        update_body_file(body_path, autogen, title=title)
+        update_body_file(body_path, autogen, title=title, template_path=template_path)
         prev = entry.branch if filtered_mode(conf) else entry.sha
         pr_base = entry.branch
 

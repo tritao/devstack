@@ -261,6 +261,7 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str]
     lines.append("#   base <remote>/<branch>         Base branch for the first PR (default: origin/main)")
     lines.append("#   pr_prefix <prefix/>            Prefix to apply to non-pr/* branch keys (optional)")
     lines.append("#   body_dir <path>                PR body directory for this stack (optional)")
+    lines.append("#   body_template <path>           Template for newly created PR bodies (optional)")
     lines.append("#   github_mode chained|native     GitHub publication backend (default: chained)")
     lines.append("#   github_repo <owner/repo>        Explicit target repository (optional)")
     lines.append("#   push_remote <remote>            Remote that owns PR branches (optional)")
@@ -288,6 +289,9 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str]
         lines.append("")
     if conf.body_dir and conf.body_dir.rstrip("/") != default_dir.rstrip("/"):
         lines.append(f"body_dir {conf.body_dir}")
+        lines.append("")
+    if conf.body_template:
+        lines.append(f"body_template {conf.body_template}")
         lines.append("")
     if conf.ignore:
         for item in conf.ignore:

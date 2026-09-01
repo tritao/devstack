@@ -1,13 +1,51 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from tools.devstack.commands.bodies import autogen_block
+from tools.devstack.commands.bodies import autogen_block, update_body_file
 
 
 class TestBodies(unittest.TestCase):
+    def test_new_body_omits_testing_section(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            body_path = Path(directory) / "body.md"
+            update_body_file(body_path, "<!-- AUTOGEN -->", title="Layer title")
+
+            body = body_path.read_text(encoding="utf-8")
+
+        self.assertIn("## Summary", body)
+        self.assertIn("## Why", body)
+        self.assertIn("## Changes", body)
+        self.assertNotIn("## Testing", body)
+
+    def test_new_body_uses_configured_template(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            body_path = root / "body.md"
+            template_path = root / "template.md"
+            template_path.write_text(
+                "---\ntitle: {{ title }}\n---\n\nDirect summary.\n\n{{ autogen }}\n",
+                encoding="utf-8",
+            )
+
+            update_body_file(
+                body_path,
+                "<!-- AUTOGEN -->",
+                title="Layer title",
+                template_path=template_path,
+            )
+
+            body = body_path.read_text(encoding="utf-8")
+
+        self.assertIn('title: "Layer title"', body)
+        self.assertIn("Direct summary.", body)
+        self.assertIn("<!-- AUTOGEN -->", body)
+        self.assertNotIn("{{ title }}", body)
+
     def test_autogen_commits_format_sha_colon_subject(self) -> None:
         commits = "2454222e59 Add render tests infrastructure.\n"
         with patch.dict(os.environ, {"DEVSTACK_BODY_COMMIT_SUBJECT_MAX": "200"}, clear=False):
@@ -36,4 +74,3 @@ class TestBodies(unittest.TestCase):
             )
         # 10 chars max => 9 + ellipsis.
         self.assertIn("- `2454222e59`: " + ("x" * 9) + "…", out)
-

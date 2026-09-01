@@ -476,6 +476,14 @@ By default, `gh-sync` uses the subject of the layer’s cut-point commit as the 
 
 New PR body files created by `body-refresh` include a frontmatter `title:` by default; edit it any time.
 
+To give newly created bodies a project-specific structure or tone, configure a template:
+
+```text
+body_template .devstack/pr-body-template.md
+```
+
+The template may contain `{{ title }}` for the JSON-quoted PR title and `{{ autogen }}` for the generated stack metadata block. Existing body files keep their handwritten content; `body-refresh` replaces only their `AUTOGEN` block.
+
 To override the title, add a YAML frontmatter block at the top of the PR body file:
 
 ```md
