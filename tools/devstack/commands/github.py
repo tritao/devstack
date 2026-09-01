@@ -505,8 +505,32 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
 
 
 def write_sync_plan(path: Path, state: dict[str, object]) -> dict[str, object]:
+    operations: list[dict[str, object]] = []
+    for layer in state["layers"]:
+        operations.append(
+            {
+                "type": "push",
+                "branch": layer["branch"],
+                "expected_remote_sha": layer["remote_sha"],
+                "new_sha": layer["local_sha"],
+                "force_with_lease": True,
+                "rollback_sha": layer["remote_sha"],
+            }
+        )
+        operations.append(
+            {
+                "type": "pr-sync",
+                "branch": layer["branch"],
+                "pr": layer["pr"].get("number") if layer["pr"] else None,
+                "base": layer["desired_base"],
+                "title": layer["desired_title"],
+                "body_sha256": layer["desired_body_sha256"],
+            }
+        )
+    if state["github_mode"] == "native" and state["only"] is None:
+        operations.append({"type": "native-link", "layers": len(state["layers"])})
     plan = {
-        "schema": 1,
+        "schema": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "fingerprint": _canonical_fingerprint(state),
         "summary": {
@@ -515,11 +539,30 @@ def write_sync_plan(path: Path, state: dict[str, object]) -> dict[str, object]:
             "layers": len(state["layers"]),
             "native_link": state["github_mode"] == "native" and state["only"] is None,
         },
+        "operations": operations,
         "state": state,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return plan
+
+
+def push_planned_branch(root: Path, push_remote: str, branch: str, planned: dict[str, object]) -> None:
+    """Apply exactly one reviewed branch update with an explicit lease."""
+    expected = str(planned.get("remote_sha") or "")
+    local_sha = str(planned.get("local_sha") or "")
+    if not local_sha:
+        die(f"gh-sync plan has no local SHA for {branch}")
+    run(
+        [
+            "git",
+            "push",
+            push_remote,
+            f"{local_sha}:refs/heads/{branch}",
+            f"--force-with-lease=refs/heads/{branch}:{expected}",
+        ],
+        cwd=root,
+    )
 
 
 def cmd_stack_doctor(args: argparse.Namespace) -> None:
@@ -528,6 +571,7 @@ def cmd_stack_doctor(args: argparse.Namespace) -> None:
     gh_check()
     state = build_sync_state(root, conf, argparse.Namespace(only=None, standalone=False, draft=False))
     errors: list[str] = []
+    warnings: list[str] = []
     if not state["github_repo"]:
         errors.append("GitHub repository could not be determined")
     if not state["base_remote_sha"]:
@@ -540,18 +584,18 @@ def cmd_stack_doctor(args: argparse.Namespace) -> None:
         if not layer["local_sha"]:
             errors.append(f"{layer['branch']}: local branch/commit is missing")
         if not layer["remote_sha"]:
-            errors.append(f"{layer['branch']}: branch is missing on {state['push_remote']}")
+            warnings.append(f"{layer['branch']}: branch will be created on {state['push_remote']}")
         elif layer["local_sha"] != layer["remote_sha"]:
-            errors.append(
+            warnings.append(
                 f"{layer['branch']}: remote SHA {str(layer['remote_sha'])[:12]} "
-                f"does not match local SHA {str(layer['local_sha'])[:12]}"
+                f"will be replaced by local SHA {str(layer['local_sha'])[:12]}"
             )
         pr = layer["pr"]
         if pr.get("lookup_error"):
             errors.append(f"{layer['branch']}: existing PR could not be read")
         if pr and pr.get("head") != layer["branch"]:
             errors.append(f"{layer['branch']}: PR head is {pr.get('head')}")
-    result = {"ok": not errors, "errors": errors, "state": state}
+    result = {"ok": not errors, "errors": errors, "warnings": warnings, "state": state}
     if bool(getattr(args, "json", False)):
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
@@ -562,6 +606,8 @@ def cmd_stack_doctor(args: argparse.Namespace) -> None:
         print(f"Layers:            {len(state['layers'])}")
         for error in errors:
             print(f"ERROR: {error}")
+        for warning in warnings:
+            print(f"WARNING: {warning}")
     if errors:
         raise SystemExit(1)
 
@@ -574,20 +620,17 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
     plan_path = getattr(args, "plan", None)
     apply_plan_path = getattr(args, "apply_plan", None)
     apply = bool(getattr(args, "apply", False) or apply_plan_path)
+    planned_pushes: dict[str, dict[str, object]] = {}
     if plan_path:
         state = build_sync_state(root, conf, args)
         if not state["configured_repo_matches"]:
             die("cannot create plan: configured github_repo does not match the base remote")
         if state["github_mode"] == "native" and not state["native_eligible"]:
             die("cannot create plan: native mode requires a same-repository stack")
-        unsynced = [
-            layer["branch"]
-            for layer in state["layers"]
-            if not layer["local_sha"] or layer["local_sha"] != layer["remote_sha"]
-        ]
-        if not state["base_remote_sha"] or unsynced:
-            details = ", ".join(unsynced) if unsynced else "base branch"
-            die(f"cannot create plan: required remote refs are missing or stale: {details}")
+        missing_local = [layer["branch"] for layer in state["layers"] if not layer["local_sha"]]
+        if not state["base_remote_sha"] or missing_local:
+            details = ", ".join(missing_local) if missing_local else "base branch"
+            die(f"cannot create plan: required local/base refs are missing: {details}")
         plan = write_sync_plan(Path(plan_path).expanduser(), state)
         print(f"wrote gh-sync plan: {Path(plan_path).expanduser()}")
         print(f"fingerprint: {plan['fingerprint']}")
@@ -599,6 +642,10 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         except (OSError, json.JSONDecodeError) as exc:
             die(f"cannot read gh-sync plan {path}: {exc}")
         saved_state = saved.get("state") or {}
+        if saved.get("fingerprint") != _canonical_fingerprint(saved_state):
+            die("gh-sync plan contents do not match its fingerprint; generate and review a new plan")
+        if saved.get("schema") != 2:
+            die(f"unsupported gh-sync plan schema: {saved.get('schema')}")
         args.only = saved_state.get("only")
         args.standalone = bool(saved_state.get("standalone", False))
         args.draft = bool(saved_state.get("draft", False))
@@ -612,6 +659,7 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
                 "Generate and review a new plan before applying."
             )
         print(f"validated gh-sync plan: {path}")
+        planned_pushes = {str(layer["branch"]): layer for layer in saved_state.get("layers", [])}
     if not apply:
         note("dry-run; pass --apply to create/edit PRs")
 
@@ -657,6 +705,7 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
     if apply:
         print("mutation summary:")
         print(f"  repository:        {repo or '(unknown)'}")
+        print(f"  branches push:     {len(entries) if apply_plan_path else 0}")
         print(f"  PRs create/update: {len(entries)}")
         print(f"  native relink:     {'yes' if github_mode == 'native' and only is None else 'no'}")
     # If applying, fail fast with a clear hint when branches aren't pushed yet.
@@ -701,6 +750,12 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         head_ref = (
             gh_head_ref(root, base_repo=repo, branch=entry.branch, push_remote=push_remote) if repo else entry.branch
         )
+
+        if apply_plan_path:
+            planned = planned_pushes.get(entry.branch)
+            if not planned:
+                die(f"gh-sync plan has no push operation for {entry.branch}")
+            push_planned_branch(root, push_remote, entry.branch, planned)
 
         if apply:
             # gh PR create/edit requires the head to exist as a branch on the remote fork.

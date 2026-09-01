@@ -106,7 +106,8 @@ GitHub's native stack metadata by confirming the repository explicitly with
 `ds stack-mode native --apply --confirm-repository OWNER/REPO`; Devstack
 rejects native mode for cross-fork layouts. Run `ds stack-status` and
 `ds stack-doctor` before automated stack operations. Use `ds gh-sync --plan`
-and `ds gh-sync --apply-plan` so changes since review are rejected.
+and `ds gh-sync --apply-plan` so leased branch pushes and PR changes are
+reviewed together and changes since review are rejected.
 
 ## Lint tooling
 

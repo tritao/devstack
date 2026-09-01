@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.devstack.commands.github import _canonical_fingerprint, cmd_gh_sync, write_sync_plan
+from tools.devstack.commands.github import _canonical_fingerprint, cmd_gh_sync, push_planned_branch, write_sync_plan
 
 
 class TestGhSyncPlans(unittest.TestCase):
@@ -54,6 +55,85 @@ class TestGhSyncPlans(unittest.TestCase):
         self.assertEqual("FreeCAD/coin", saved["summary"]["repository"])
         self.assertEqual(1, saved["summary"]["layers"])
         self.assertTrue(saved["summary"]["native_link"])
+        self.assertEqual(2, saved["schema"])
+        self.assertEqual("push", saved["operations"][0]["type"])
+        self.assertEqual("remote-sha", saved["operations"][0]["expected_remote_sha"])
+        self.assertEqual("local-sha", saved["operations"][0]["new_sha"])
+        self.assertEqual("pr-sync", saved["operations"][1]["type"])
+        self.assertEqual("native-link", saved["operations"][2]["type"])
+
+    def test_plan_records_creation_lease_for_missing_remote_branch(self) -> None:
+        state = self.sample_state()
+        state["layers"][0]["remote_sha"] = ""
+        with tempfile.TemporaryDirectory() as td:
+            plan = write_sync_plan(Path(td) / "plan.json", state)
+        push = plan["operations"][0]
+        self.assertEqual("", push["expected_remote_sha"])
+        self.assertEqual("", push["rollback_sha"])
+
+    def test_planned_push_uses_explicit_sha_and_lease(self) -> None:
+        planned = self.sample_state()["layers"][0]
+        with patch("tools.devstack.commands.github.run") as run:
+            push_planned_branch(Path("/repo"), "target", "stack/egl-offscreen", planned)
+        self.assertEqual(
+            [
+                "git",
+                "push",
+                "target",
+                "local-sha:refs/heads/stack/egl-offscreen",
+                "--force-with-lease=refs/heads/stack/egl-offscreen:remote-sha",
+            ],
+            run.call_args.args[0],
+        )
+
+    def test_planned_push_updates_local_bare_remote_and_rejects_stale_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "work"
+            remote = Path(td) / "remote.git"
+            subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+            subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Devstack Test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "devstack@example.invalid"], cwd=root, check=True)
+            tracked = root / "tracked.txt"
+            tracked.write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "old"], cwd=root, check=True, capture_output=True)
+            old_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, check=True, text=True, capture_output=True
+            ).stdout.strip()
+            subprocess.run(["git", "push", str(remote), "HEAD:refs/heads/stack/test"], cwd=root, check=True)
+            tracked.write_text("new\n", encoding="utf-8")
+            subprocess.run(["git", "commit", "-am", "new"], cwd=root, check=True, capture_output=True)
+            new_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, check=True, text=True, capture_output=True
+            ).stdout.strip()
+
+            push_planned_branch(
+                root,
+                str(remote),
+                "stack/test",
+                {"remote_sha": old_sha, "local_sha": new_sha},
+            )
+            remote_sha = subprocess.run(
+                ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/stack/test"],
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            self.assertEqual(new_sha, remote_sha)
+
+            tracked.write_text("newer\n", encoding="utf-8")
+            subprocess.run(["git", "commit", "-am", "newer"], cwd=root, check=True, capture_output=True)
+            newer_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, check=True, text=True, capture_output=True
+            ).stdout.strip()
+            with self.assertRaises(subprocess.CalledProcessError):
+                push_planned_branch(
+                    root,
+                    str(remote),
+                    "stack/test",
+                    {"remote_sha": old_sha, "local_sha": newer_sha},
+                )
 
     def test_remote_or_pr_change_invalidates_fingerprint(self) -> None:
         before = self.sample_state()
@@ -85,6 +165,32 @@ class TestGhSyncPlans(unittest.TestCase):
                 patch("tools.devstack.commands.github.read_conf", return_value=object()),
                 patch("tools.devstack.commands.github.gh_check"),
                 patch("tools.devstack.commands.github.build_sync_state", return_value=changed_state),
+                patch("tools.devstack.commands.github.run") as run,
+            ):
+                with self.assertRaises(SystemExit):
+                    cmd_gh_sync(args)
+        run.assert_not_called()
+
+    def test_apply_plan_rejects_tampered_saved_state_before_mutation(self) -> None:
+        state = self.sample_state()
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "plan.json"
+            write_sync_plan(path, state)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            saved["state"]["layers"][0]["desired_title"] = "tampered"
+            path.write_text(json.dumps(saved), encoding="utf-8")
+            args = argparse.Namespace(
+                apply=False,
+                apply_plan=str(path),
+                plan=None,
+                only=None,
+                standalone=False,
+                draft=False,
+            )
+            with (
+                patch("tools.devstack.commands.github.repo_root", return_value=Path("/repo")),
+                patch("tools.devstack.commands.github.read_conf", return_value=object()),
+                patch("tools.devstack.commands.github.gh_check"),
                 patch("tools.devstack.commands.github.run") as run,
             ):
                 with self.assertRaises(SystemExit):

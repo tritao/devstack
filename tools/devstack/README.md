@@ -443,10 +443,15 @@ ds gh-sync --apply-plan .devstack/gh-sync-plan.json
 ```
 
 The plan fingerprints configuration, topology, local and remote branch SHAs,
-desired PR metadata, and current GitHub PR state. `--apply-plan` rejects the
-operation when any fingerprinted input has changed, requiring a new review.
+desired PR metadata, and current GitHub PR state. It records each branch push
+with its exact old SHA and applies it with an explicit `--force-with-lease`,
+followed by that layer's PR update. This allows rewritten or new branches to be
+reviewed before they exist remotely. `--apply-plan` rejects the operation when
+any fingerprinted input has changed, requiring a new review.
 `stack-doctor` checks repository topology, the native extension, branch
-availability, and existing PR mapping.
+availability, and existing PR mapping. A missing or differing remote branch is
+reported as a pending-publication warning; topology, local-ref, and PR-mapping
+problems remain errors.
 
 `ds gh-sync` remains dry-run by default. In native mode a full-stack sync also
 prints the derived `gh stack link` command; `--apply-plan` runs it only after
