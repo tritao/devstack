@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from tools.devstack.core.adapters import try_load_adapter
+from tools.devstack.core.build_defaults import load_build_defaults
 from tools.devstack.core.build_root import external_build_path, ensure_external_build_preset, ensure_sandbox_build_preset
 from tools.devstack.core.cmake_presets import (
     cache_var_is_set,
@@ -42,6 +43,7 @@ def ensure_submodules(root: Path, mode: str) -> None:
 
 def cmd_build(args: argparse.Namespace) -> None:
     root = repo_root()
+    build_defaults = load_build_defaults(root)
 
     preset = args.preset
     build_dir = args.build_dir or ""
@@ -58,12 +60,14 @@ def cmd_build(args: argparse.Namespace) -> None:
     distcc_mode = (getattr(args, "distcc_mode", None) or "ccache").strip().lower()
     distcc_hosts = (args.distcc_hosts or "").strip()
     distcc_verbose = bool(args.distcc_verbose)
-    use_ccache_launcher_requested = bool(args.ccache_launcher)
+    ccache_arg = getattr(args, "ccache_launcher", None)
+    use_ccache_launcher_requested = build_defaults.get("ccache_launcher", False) if ccache_arg is None else ccache_arg
     ccache_dir = (getattr(args, "ccache_dir", None) or "").strip()
     no_env_file = bool(args.no_env_file)
     env_file_arg = (args.env_file or "").strip()
     want_adapter = getattr(args, "adapter", "auto")
-    sandbox_paths = bool(getattr(args, "sandbox_paths", False))
+    sandbox_arg = getattr(args, "sandbox_paths", None)
+    sandbox_paths = build_defaults.get("sandbox_paths", False) if sandbox_arg is None else sandbox_arg
     adapter = try_load_adapter(root, want_adapter)
 
     if adapter is not None:

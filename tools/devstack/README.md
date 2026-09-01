@@ -333,7 +333,14 @@ Physical outputs remain isolated below
 `$DEVSTACK_BUILD_ROOT/<worktree>/sandbox/<preset>`. Bubblewrap is used here for
 path normalization, not as a security boundary. Build and test targets should
 be invoked with `ds build --sandbox-paths`; direct launches, debuggers, and IDEs
-do not yet enter the same namespace. This mode therefore remains opt-in.
+do not yet enter the same namespace. The mode remains opt-in for worktrees not
+created by `wt-fresh`.
+
+`ds wt-fresh <name>` enables stable paths and ccache by default, then records
+both preferences in `.devstack/build-defaults.json` in the new worktree. Plain
+`ds build` there inherits them. Use `--no-sandbox-paths` or
+`--no-ccache-launcher` on `wt-fresh` to disable either preference; the same
+flags temporarily override saved preferences on `build`.
 
 Env-file precedence (first match wins):
 

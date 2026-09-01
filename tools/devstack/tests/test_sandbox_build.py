@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools.devstack.core.build_defaults import write_build_defaults
+
 
 DEVSTACK_PY = Path(__file__).resolve().parents[1] / "devstack.py"
 
@@ -65,7 +67,9 @@ class TestSandboxBuild(unittest.TestCase):
                 "--no-env-file",
             ]
             subprocess.run(command, cwd=source_a, env=env, check=True, stdout=subprocess.DEVNULL)
-            subprocess.run(command, cwd=source_b, env=env, check=True, stdout=subprocess.DEVNULL)
+            write_build_defaults(source_b, sandbox_paths=True, ccache_launcher=True)
+            inherited_command = [arg for arg in command if arg not in ("--ccache-launcher", "--sandbox-paths")]
+            subprocess.run(inherited_command, cwd=source_b, env=env, check=True, stdout=subprocess.DEVNULL)
 
             stats = subprocess.run(["ccache", "--show-stats"], env=env, check=True, capture_output=True, text=True)
             hit = re.search(r"^\s*Hits:\s+(\d+)", stats.stdout, flags=re.MULTILINE)

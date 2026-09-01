@@ -61,9 +61,12 @@ ds wt-fresh my-feature
 ```
 
 This fetches `upstream/main`, rebases the golden `main`, completes its
-Clang+mold build with ccache, and then creates `feature/my-feature`. It refuses
-dirty or non-`main` golden checkouts. Use `--golden-dir`, `--remote`,
-`--main-branch`, `--branch`, or `--dir` to override the defaults.
+Clang+mold build with ccache and stable virtual paths, and then creates
+`feature/my-feature`. The new worktree remembers those build defaults, so plain
+`ds build` continues using ccache and stable paths. Use `--no-sandbox-paths`
+and/or `--no-ccache-launcher` to opt out. The command refuses dirty or
+non-`main` golden checkouts. Use `--golden-dir`, `--remote`, `--main-branch`,
+`--branch`, or `--dir` to override the other defaults.
 
 When a task is finished, remove its worktree and external build data with:
 
@@ -88,11 +91,10 @@ ds build --preset debug --ccache-launcher --sandbox-paths
 ```
 
 The real output remains isolated at
-`$DEVSTACK_BUILD_ROOT/<worktree-name>/sandbox/<preset>`. Use the same flag when
-warming the golden checkout through `ds wt-fresh <name> --sandbox-paths` and
-when building targets in the resulting worktree. This is path normalization,
-not a security sandbox, and direct debugger, IDE, and GUI-launch integration is
-not yet wrapped.
+`$DEVSTACK_BUILD_ROOT/<worktree-name>/sandbox/<preset>`. `wt-fresh` enables and
+records this mode automatically; manually created worktrees can opt in with the
+command above. This is path normalization, not a security sandbox, and direct
+debugger, IDE, and GUI-launch integration is not yet wrapped.
 
 Stack configuration and generated PR bodies remain local to each target
 worktree under `.devstack/`. The standalone checkout supplies the executable;

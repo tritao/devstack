@@ -20,6 +20,8 @@ def args(**overrides: object) -> argparse.Namespace:
         "dir": None,
         "preset": "debug",
         "jobs": None,
+        "sandbox_paths": True,
+        "ccache_launcher": True,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -49,6 +51,7 @@ class TestWtFresh(unittest.TestCase):
                 patch("tools.devstack.commands.worktrees.git", side_effect=fake_git),
                 patch("tools.devstack.commands.worktrees.current_branch", return_value="main"),
                 patch("tools.devstack.commands.worktrees.run"),
+                patch("tools.devstack.commands.worktrees.write_build_defaults"),
                 patch.dict("os.environ", {}, clear=True),
             ):
                 cmd_wt_fresh(args(dir=str(Path(td) / "new-worktree")))
@@ -68,6 +71,7 @@ class TestWtFresh(unittest.TestCase):
                 patch("tools.devstack.commands.worktrees.git", side_effect=fake_git),
                 patch("tools.devstack.commands.worktrees.current_branch", return_value="main"),
                 patch("tools.devstack.commands.worktrees.run") as run,
+                patch("tools.devstack.commands.worktrees.write_build_defaults") as write_defaults,
                 patch.dict("os.environ", {}, clear=True),
             ):
                 cmd_wt_fresh(args())
@@ -79,9 +83,38 @@ class TestWtFresh(unittest.TestCase):
             self.assertIn("--toolchain", commands[2])
             self.assertIn("clang-mold", commands[2])
             self.assertIn("--ccache-launcher", commands[2])
+            self.assertIn("--sandbox-paths", commands[2])
             self.assertIn("wt-init", commands[3])
             self.assertLess(commands[2].index("build"), len(commands[2]))
             self.assertEqual(str(Path(td) / "FreeCAD-worktrees" / "my-fix"), commands[3][-1])
+            write_defaults.assert_called_once_with(
+                Path(td) / "FreeCAD-worktrees" / "my-fix",
+                sandbox_paths=True,
+                ccache_launcher=True,
+            )
+
+    def test_can_disable_stable_paths_and_ccache(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            golden = Path(td) / "FreeCAD-master"
+            golden.mkdir()
+            with (
+                patch("tools.devstack.commands.worktrees.repo_root", return_value=golden),
+                patch("tools.devstack.commands.worktrees.load_devstack_env", return_value={}),
+                patch("tools.devstack.commands.worktrees.git", return_value=""),
+                patch("tools.devstack.commands.worktrees.current_branch", return_value="main"),
+                patch("tools.devstack.commands.worktrees.run") as run,
+                patch("tools.devstack.commands.worktrees.write_build_defaults") as write_defaults,
+            ):
+                cmd_wt_fresh(args(sandbox_paths=False, ccache_launcher=False))
+
+            build_command = run.call_args_list[2].args[0]
+            self.assertIn("--no-sandbox-paths", build_command)
+            self.assertIn("--no-ccache-launcher", build_command)
+            write_defaults.assert_called_once_with(
+                Path(td) / "FreeCAD-worktrees" / "my-fix",
+                sandbox_paths=False,
+                ccache_launcher=False,
+            )
 
     def test_refuses_dirty_golden_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as td:

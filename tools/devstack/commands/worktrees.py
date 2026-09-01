@@ -16,6 +16,7 @@ from tools.devstack.core.git import (
     sanitize_branch_to_conf_name,
 )
 from tools.devstack.core.env import load_devstack_env
+from tools.devstack.core.build_defaults import write_build_defaults
 from tools.devstack.core.proc import die, note, run
 from tools.devstack.core.stackconf import default_body_dir, read_conf, stack_name_from_conf
 
@@ -290,6 +291,10 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
     golden = repo_root(Path(selected_golden).expanduser().resolve()) if selected_golden else repo_root()
     remote = args.remote
     main_branch = args.main_branch
+    sandbox_arg = getattr(args, "sandbox_paths", None)
+    ccache_arg = getattr(args, "ccache_launcher", None)
+    sandbox_paths = True if sandbox_arg is None else bool(sandbox_arg)
+    ccache_launcher = True if ccache_arg is None else bool(ccache_arg)
 
     dirty = git(["status", "--porcelain", "--untracked-files=all"], cwd=golden)
     if dirty:
@@ -324,12 +329,11 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
         args.preset,
         "--toolchain",
         "clang-mold",
-        "--ccache-launcher",
     ]
+    build_args.append("--ccache-launcher" if ccache_launcher else "--no-ccache-launcher")
     if args.jobs is not None:
         build_args += ["--jobs", str(args.jobs)]
-    if getattr(args, "sandbox_paths", False):
-        build_args.append("--sandbox-paths")
+    build_args.append("--sandbox-paths" if sandbox_paths else "--no-sandbox-paths")
     run(build_args, cwd=golden)
 
     # Creating the worktree is deliberately last: update or build failures leave
@@ -347,6 +351,12 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
         str(dir_path),
     ]
     run(create_args, cwd=golden)
+    defaults_path = write_build_defaults(
+        dir_path,
+        sandbox_paths=sandbox_paths,
+        ccache_launcher=ccache_launcher,
+    )
+    print(f"saved worktree build defaults: {defaults_path}")
 
 
 def cmd_wt_remove(args: argparse.Namespace) -> None:
