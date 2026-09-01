@@ -772,17 +772,18 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
                 # Projects Classic field even when only editing title/base/body.
                 # The REST endpoint updates exactly those fields and works with
                 # both older and current gh versions.
+                current_pr = _current_pr_state(root, repo, pr_number)
                 cmd = [
                     "gh",
                     "api",
                     f"repos/{repo}/pulls/{pr_number}",
                     "--method",
                     "PATCH",
-                    "-f",
-                    f"base={base}",
-                    "-f",
-                    f"title={title}",
                 ]
+                if current_pr.get("base") != base:
+                    cmd.extend(["-f", f"base={base}"])
+                if current_pr.get("title") != title:
+                    cmd.extend(["-f", f"title={title}"])
             else:
                 cmd = ["gh", "pr", "edit", pr_number, *repo_args, "--base", base, "--title", title]
         else:
@@ -793,14 +794,24 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         if body_file.is_file():
             gh_body_file = body_file_for_gh(root, entry, body_file)
             if pr_number and repo:
-                cmd.extend(["-F", f"body=@{gh_body_file}"])
+                desired_body = gh_body_file.read_text(encoding="utf-8", errors="replace")
+                if current_pr.get("body_sha256") != _sha256_text(desired_body):
+                    cmd.extend(["-F", f"body=@{gh_body_file}"])
             else:
                 cmd.extend(["--body-file", str(gh_body_file)])
         else:
             body = f"Stacked PR: {entry.branch} ({entry.sha})"
-            cmd.extend(["-f", f"body={body}"] if pr_number and repo else ["--body", body])
+            if pr_number and repo:
+                if current_pr.get("body_sha256") != _sha256_text(body):
+                    cmd.extend(["-f", f"body={body}"])
+            else:
+                cmd.extend(["--body", body])
 
         if apply:
+            if pr_number and repo and len(cmd) == 5:
+                print(f"PR unchanged: {pr_number} ({entry.branch})")
+                base = entry.branch
+                continue
             try:
                 run(cmd, cwd=root, check=True, capture=True)
             except subprocess.CalledProcessError as exc:
