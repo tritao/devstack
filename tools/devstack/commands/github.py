@@ -176,6 +176,24 @@ def native_link_command(conf) -> list[str]:
     return command
 
 
+def apply_native_link(root: Path, conf, expected_prs: set[int]) -> None:
+    """Link a native stack, preserving historical members already recorded by GitHub."""
+    try:
+        run(native_link_command(conf), cwd=root, capture=True)
+    except subprocess.CalledProcessError as exc:
+        output = ((exc.stdout or "") + "\n" + (exc.stderr or "")).strip()
+        match = re.search(r"Current stack:\s*((?:#\d+[,:]?\s*)+)", output)
+        current_prs = {int(number) for number in re.findall(r"#(\d+)", match.group(1))} if match else set()
+        if "would remove" in output and expected_prs and expected_prs.issubset(current_prs):
+            preserved = sorted(current_prs - expected_prs)
+            note(
+                "native stack already contains every active PR; preserving historical member(s): "
+                + ", ".join(f"#{number}" for number in preserved)
+            )
+            return
+        raise
+
+
 def cmd_stack_status(args: argparse.Namespace) -> None:
     root = repo_root()
     conf = read_conf(root)
@@ -848,8 +866,13 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         if only is not None:
             note("native stack linking requires the full stack; run `ds gh-sync` without --only")
             return
-        link_cmd = native_link_command(conf)
         if apply:
-            run(link_cmd, cwd=root)
+            expected_prs = {
+                int(layer["pr"]["number"])
+                for layer in state.get("layers", [])
+                if layer.get("pr") and layer["pr"].get("number")
+            }
+            apply_native_link(root, conf, expected_prs)
         else:
+            link_cmd = native_link_command(conf)
             print(" ".join(shlex_quote(x) for x in link_cmd))

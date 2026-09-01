@@ -8,10 +8,41 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.devstack.commands.github import _canonical_fingerprint, cmd_gh_sync, push_planned_branch, write_sync_plan
+from tools.devstack.commands.github import (
+    _canonical_fingerprint,
+    apply_native_link,
+    cmd_gh_sync,
+    push_planned_branch,
+    write_sync_plan,
+)
 
 
 class TestGhSyncPlans(unittest.TestCase):
+    def test_native_link_preserves_historical_stack_members(self) -> None:
+        conf = type("Conf", (), {"base_remote_ref": "upstream/main", "push_remote": "target", "entries": []})()
+        error = subprocess.CalledProcessError(
+            5,
+            ["gh", "stack", "link"],
+            output="Cannot update stack: this would remove #11 from the stack\nCurrent stack: #11, #12, #65\n",
+            stderr="",
+        )
+        with patch("tools.devstack.commands.github.run", side_effect=error):
+            apply_native_link(Path("/repo"), conf, {12, 65})
+
+    def test_native_link_does_not_hide_missing_active_pr(self) -> None:
+        conf = type("Conf", (), {"base_remote_ref": "upstream/main", "push_remote": "target", "entries": []})()
+        error = subprocess.CalledProcessError(
+            5,
+            ["gh", "stack", "link"],
+            output="Cannot update stack: this would remove #11 from the stack\nCurrent stack: #11, #12\n",
+            stderr="",
+        )
+        with (
+            patch("tools.devstack.commands.github.run", side_effect=error),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            apply_native_link(Path("/repo"), conf, {12, 65})
+
     def sample_state(self) -> dict[str, object]:
         return {
             "schema": 1,
