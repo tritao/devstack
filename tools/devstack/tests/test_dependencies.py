@@ -61,7 +61,7 @@ class TestDependencies(unittest.TestCase):
             _git(base, "clone", str(dependency), str(source))
             (source / ".devstack").mkdir()
             (source / ".devstack" / "stack.conf").write_text(
-                f"base origin/main\ngithub_repo FreeCAD/coin\ncommit 001-top stack/top {new_sha}\n",
+                f"base origin/main\ngithub_repo FreeCAD/coin\ncommit 001-top stack/top {new_sha[:10]}\n",
                 encoding="utf-8",
             )
 

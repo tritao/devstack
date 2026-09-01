@@ -104,6 +104,7 @@ def cmd_dep_pin(args: argparse.Namespace) -> None:
     dep = select_dependency(root, args.dependency)
     source = Path(args.from_stack).expanduser().resolve()
     conf, entry = _select_stack_layer(source, args.layer)
+    selected_sha = git(["rev-parse", f"{entry.sha}^{{commit}}"], cwd=source)
     if conf.github_repo and conf.github_repo != dep.repo:
         die(f"source stack repository is {conf.github_repo}, expected {dep.repo}")
     if entry.branch != dep.branch:
@@ -113,11 +114,11 @@ def cmd_dep_pin(args: argparse.Namespace) -> None:
     remote_sha = _remote_branch_sha(dep)
     if not remote_sha:
         die(f"dependency branch is not published: {dep.repo}:{dep.branch}")
-    if remote_sha != entry.sha:
+    if remote_sha != selected_sha:
         die(
             f"selected dependency commit is not the published branch head\n"
             f"branch:   {dep.repo}:{dep.branch}\n"
-            f"selected: {entry.sha}\n"
+            f"selected: {selected_sha}\n"
             f"remote:   {remote_sha}"
         )
 
@@ -136,12 +137,12 @@ def cmd_dep_pin(args: argparse.Namespace) -> None:
     print(f"Source layer:     {entry.key}")
     print(f"Source branch:    {entry.branch}")
     print(f"Current pin:      {old_sha}")
-    print(f"Proposed pin:     {entry.sha}")
+    print(f"Proposed pin:     {selected_sha}")
     print("Published:        yes")
     if not args.apply:
         print("Dry run only; rerun with --apply to update and stage the gitlink.")
         return
-    if old_sha == entry.sha and _worktree_sha(root, dep.path) == entry.sha:
+    if old_sha == selected_sha and _worktree_sha(root, dep.path) == selected_sha:
         print("Already pinned and checked out.")
         return
 
@@ -149,8 +150,8 @@ def cmd_dep_pin(args: argparse.Namespace) -> None:
     if not _worktree_sha(root, dep.path):
         run(["git", "submodule", "update", "--init", "--", dep.path], cwd=root)
     run(["git", "fetch", "origin", dep.branch], cwd=submodule)
-    run(["git", "checkout", "--detach", entry.sha], cwd=submodule)
+    run(["git", "checkout", "--detach", selected_sha], cwd=submodule)
     run(["git", "add", "--", dep.path], cwd=root)
-    if _gitlink_sha(root, dep.path, ":") != entry.sha:
+    if _gitlink_sha(root, dep.path, ":") != selected_sha:
         die(f"failed to stage dependency gitlink: {dep.path}")
-    print(f"Updated and staged {dep.path} at {entry.sha}")
+    print(f"Updated and staged {dep.path} at {selected_sha}")
