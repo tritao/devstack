@@ -24,6 +24,9 @@ class StackConfig:
     pr_prefix: str
     cut_prefix: str
     body_dir: str
+    github_mode: str
+    github_repo: str
+    push_remote: str
     ignore: list[str]  # commit-ish or ref (resolved at runtime)
     entries: list[StackEntry]
 
@@ -61,6 +64,9 @@ def read_conf(root: Path) -> StackConfig:
     pr_prefix = ""
     cut_prefix = ""
     body_dir = ""
+    github_mode = "chained"
+    github_repo = ""
+    push_remote = ""
     ignore: list[str] = []
     entries: list[StackEntry] = []
 
@@ -87,6 +93,21 @@ def read_conf(root: Path) -> StackConfig:
             if len(parts) != 2:
                 die(f"bad body_dir directive in {conf_path}: {raw}")
             body_dir = parts[1].rstrip("/")
+            continue
+        if parts[0] == "github_mode":
+            if len(parts) != 2 or parts[1] not in ("chained", "native"):
+                die(f"bad github_mode directive in {conf_path}: {raw} (expected chained|native)")
+            github_mode = parts[1]
+            continue
+        if parts[0] == "github_repo":
+            if len(parts) != 2 or "/" not in parts[1]:
+                die(f"bad github_repo directive in {conf_path}: {raw}")
+            github_repo = parts[1]
+            continue
+        if parts[0] == "push_remote":
+            if len(parts) != 2:
+                die(f"bad push_remote directive in {conf_path}: {raw}")
+            push_remote = parts[1]
             continue
         if parts[0] == "cut_prefix":
             if len(parts) != 2:
@@ -161,6 +182,9 @@ def read_conf(root: Path) -> StackConfig:
         pr_prefix=pr_prefix,
         cut_prefix=cut_prefix,
         body_dir=body_dir,
+        github_mode=github_mode,
+        github_repo=github_repo,
+        push_remote=push_remote,
         ignore=ignore,
         entries=entries,
     )
@@ -203,3 +227,18 @@ def resolved_body_path(conf: StackConfig, entry: StackEntry, *, root: Path) -> P
         return p if p.is_absolute() else (root / p).resolve()
     filename = f"{sanitize_key_to_filename(entry.key)}.md"
     return (root / conf.body_dir / filename).resolve()
+
+
+def set_conf_directive(conf: StackConfig, key: str, value: str) -> None:
+    lines = conf.path.read_text(encoding="utf-8", errors="replace").splitlines()
+    replacement = f"{key} {value}"
+    found = False
+    for index, line in enumerate(lines):
+        if line.strip().startswith(f"{key} "):
+            lines[index] = replacement
+            found = True
+            break
+    if not found:
+        insert_at = next((i + 1 for i, line in enumerate(lines) if line.strip().startswith("base ")), 0)
+        lines.insert(insert_at, replacement)
+    conf.path.write_text("\n".join(lines) + "\n", encoding="utf-8")

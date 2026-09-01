@@ -59,6 +59,7 @@ class TestStackConf(unittest.TestCase):
             self.assertEqual(conf.base_remote_ref, "origin/main")
             self.assertEqual(conf.pr_prefix, "pr/my-series/")
             self.assertEqual(conf.body_dir, ".devstack/pr-bodies/my-series")
+            self.assertEqual(conf.github_mode, "chained")
             self.assertTrue(filtered_mode(conf))
             self.assertEqual(conf.ignore, ["deadbeef"])
             self.assertEqual(conf.entries[0].key, "001-one")
@@ -72,4 +73,3 @@ class TestStackConf(unittest.TestCase):
             conf_path = root / ".devstack" / "stack.conf"
             got = default_body_dir(root, conf_path, "pr/gui-refactor/")
             self.assertEqual(got, ".devstack/pr-bodies/gui-refactor")
-

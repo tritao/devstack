@@ -692,6 +692,10 @@ def cmd_machine_setup(args: argparse.Namespace) -> None:
                     "- Never use `ds wt-remove --force` without explicit permission to discard uncommitted changes.",
                     "- Prefer `ds` over raw `git worktree` commands for this lifecycle.",
                     "- If already inside a feature worktree, continue there; do not refresh golden unless creating a separate task was requested.",
+                    "- Before stacked-PR operations, run `ds stack-status` (or `ds stack-status --json`) and treat `.devstack/stack.conf` as the source of truth.",
+                    "- Use `ds gh-sync` rather than direct `gh pr` or `gh stack` mutations; always review its dry run before `--apply`.",
+                    "- Never change `github_mode`, force-push, relink, retarget, close, or merge PRs without explicit user approval.",
+                    "- GitHub native stacks are valid only for same-repository branches; cross-fork FreeCAD PR stacks must remain `github_mode chained`.",
                 ]
             ),
         )

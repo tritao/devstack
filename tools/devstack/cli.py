@@ -11,7 +11,7 @@ from pathlib import Path
 from tools.devstack.core.proc import die
 from tools.devstack.commands.bodies import cmd_body_context, cmd_body_prune, cmd_body_refresh
 from tools.devstack.commands.build import cmd_build
-from tools.devstack.commands.github import cmd_gh_sync, cmd_pr_layer, cmd_push
+from tools.devstack.commands.github import cmd_gh_sync, cmd_pr_layer, cmd_push, cmd_stack_mode, cmd_stack_status
 from tools.devstack.commands.lint import cmd_fix, cmd_lint
 from tools.devstack.commands.setup import cmd_doctor, cmd_machine_setup, cmd_provision, cmd_self_check, cmd_shell_alias, cmd_test
 from tools.devstack.commands.stack import (
@@ -138,6 +138,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     cmd("capture", "Capture current cut-point SHAs into .devstack/stack.conf.", category="Stack")
+    sts = cmd("stack-status", "Show local publication mode and GitHub repository topology.", category="Stack")
+    sts.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    sm = cmd("stack-mode", "Show or change the persisted GitHub publication mode.", category="Stack")
+    sm.add_argument("mode", nargs="?", choices=("chained", "native"))
+    sm.add_argument("--apply", action="store_true", help="Save the selected mode (default: dry-run).")
     cmd(
         "rebase",
         "Interactive rebase the stack branch (uses --update-refs) and refresh stack config/branches.",
@@ -457,6 +462,10 @@ def main(argv: list[str]) -> None:
             cmd_gh_sync(ns)
         elif cmd == "capture":
             cmd_capture(ns)
+        elif cmd == "stack-status":
+            cmd_stack_status(ns)
+        elif cmd == "stack-mode":
+            cmd_stack_mode(ns)
         elif cmd == "doctor":
             cmd_doctor(ns)
         elif cmd == "self-check":

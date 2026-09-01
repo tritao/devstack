@@ -261,6 +261,9 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str]
     lines.append("#   base <remote>/<branch>         Base branch for the first PR (default: origin/main)")
     lines.append("#   pr_prefix <prefix/>            Prefix to apply to non-pr/* branch keys (optional)")
     lines.append("#   body_dir <path>                PR body directory for this stack (optional)")
+    lines.append("#   github_mode chained|native     GitHub publication backend (default: chained)")
+    lines.append("#   github_repo <owner/repo>        Explicit target repository (optional)")
+    lines.append("#   push_remote <remote>            Remote that owns PR branches (optional)")
     lines.append("#   cut_prefix <prefix/>           Source cut-point branch prefix (optional; used when ignore is enabled)")
     lines.append("#   ignore <commit-ish|ref>        Exclude commit from generated PR branches (optional; enables filtered mode)")
     lines.append("#")
@@ -270,6 +273,12 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str]
     lines.append("# This file is generated/updated by `tools/devstack/devstack.sh capture`.")
     lines.append("")
     lines.append(f"base {conf.base_remote_ref}")
+    lines.append("")
+    lines.append(f"github_mode {conf.github_mode}")
+    if conf.github_repo:
+        lines.append(f"github_repo {conf.github_repo}")
+    if conf.push_remote:
+        lines.append(f"push_remote {conf.push_remote}")
     lines.append("")
     if conf.pr_prefix:
         lines.append(f"pr_prefix {conf.pr_prefix}")

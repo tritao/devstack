@@ -12,7 +12,14 @@ from tools.devstack.commands.stack import cmd_update, pr_base_for_layer, select_
 from tools.devstack.core.frontmatter import strip_body_frontmatter, title_from_body_frontmatter, title_with_number
 from tools.devstack.core.git import default_stack_remote, ensure_commit_exists, git, repo_root, resolve_commitish, sanitize_key_to_filename
 from tools.devstack.core.proc import die, have_cmd, note, run
-from tools.devstack.core.stackconf import base_branch_name, filtered_mode, key_number, read_conf, resolved_body_file
+from tools.devstack.core.stackconf import (
+    base_branch_name,
+    filtered_mode,
+    key_number,
+    read_conf,
+    resolved_body_file,
+    set_conf_directive,
+)
 
 
 def body_file_for_gh(root: Path, entry, body_file: Path) -> Path:
@@ -40,7 +47,7 @@ def shlex_quote(s: str) -> str:
 def cmd_push(args: argparse.Namespace) -> None:
     root = repo_root()
     conf = read_conf(root)
-    remote = os.environ.get("DEVSTACK_STACK_REMOTE", "origin")
+    remote = conf.push_remote or os.environ.get("DEVSTACK_STACK_REMOTE", "origin")
     only = getattr(args, "only", None)
     for entry in select_entries(conf, only):
         print(f"pushing {entry.branch}")
@@ -67,7 +74,11 @@ def cmd_pr_layer(args: argparse.Namespace) -> None:
     base_remote = (conf.base_remote_ref.split("/", 1)[0] if conf.base_remote_ref else "").strip()
     repo = gh_default_repo_for_remotes(root, base_remote=base_remote)
     entry = select_entries(conf, layer)[0]
-    head_ref = gh_head_ref(root, base_repo=repo, branch=entry.branch) if repo else entry.branch
+    head_ref = (
+        gh_head_ref(root, base_repo=repo, branch=entry.branch, push_remote=getattr(conf, "push_remote", ""))
+        if repo
+        else entry.branch
+    )
     pr_number = gh_pr_number_for_head(root, head_ref, repo)
     url = gh_pr_url(root, pr_number, repo)
     if url:
@@ -92,6 +103,129 @@ def _parse_github_owner_repo(remote_url: str) -> str:
     if m:
         return f"{m.group('owner')}/{m.group('repo')}"
     return ""
+
+
+def _repo_for_remote(root: Path, remote: str) -> str:
+    if not remote:
+        return ""
+    try:
+        return _parse_github_owner_repo(git(["remote", "get-url", remote], cwd=root))
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def _gh_stack_installed(root: Path) -> bool:
+    if not have_cmd("gh"):
+        return False
+    proc = run(["gh", "extension", "list"], cwd=root, check=False, capture=True)
+    return any(
+        "github/gh-stack" in line or line.split("\t", 1)[0].strip() == "gh-stack"
+        for line in (proc.stdout or "").splitlines()
+    )
+
+
+def stack_topology(root: Path, conf) -> dict[str, object]:
+    base_remote = conf.base_remote_ref.split("/", 1)[0] if "/" in conf.base_remote_ref else ""
+    push_remote = getattr(conf, "push_remote", "") or default_stack_remote(root)
+    detected_base_repo = _repo_for_remote(root, base_remote)
+    configured_repo = getattr(conf, "github_repo", "")
+    base_repo = detected_base_repo or configured_repo
+    head_repo = _repo_for_remote(root, push_remote)
+    configured_repo_matches = bool(
+        not configured_repo or not detected_base_repo or configured_repo.lower() == detected_base_repo.lower()
+    )
+    same_repo = bool(
+        base_repo and head_repo and base_repo.lower() == head_repo.lower() and configured_repo_matches
+    )
+    extension = _gh_stack_installed(root)
+    return {
+        "mode": getattr(conf, "github_mode", "chained"),
+        "base_ref": conf.base_remote_ref,
+        "base_remote": base_remote,
+        "push_remote": push_remote,
+        "base_repo": base_repo,
+        "configured_repo": configured_repo,
+        "configured_repo_matches": configured_repo_matches,
+        "detected_base_repo": detected_base_repo,
+        "head_repo": head_repo,
+        "repository_layout": "same-repository" if same_repo else "cross-fork" if base_repo and head_repo else "unknown",
+        "native_eligible": same_repo,
+        "gh_stack_installed": extension,
+        "valid": getattr(conf, "github_mode", "chained") != "native" or (same_repo and extension),
+        "layers": len(conf.entries),
+    }
+
+
+def native_link_command(conf) -> list[str]:
+    command = [
+        "gh",
+        "stack",
+        "link",
+        "--base",
+        base_branch_name(conf.base_remote_ref),
+    ]
+    push_remote = getattr(conf, "push_remote", "")
+    if push_remote:
+        command.extend(["--remote", push_remote])
+    command.extend(entry.branch for entry in conf.entries)
+    return command
+
+
+def cmd_stack_status(args: argparse.Namespace) -> None:
+    root = repo_root()
+    conf = read_conf(root)
+    status = stack_topology(root, conf)
+    if bool(getattr(args, "json", False)):
+        print(json.dumps(status, indent=2, sort_keys=True))
+        return
+    print(f"GitHub mode:       {status['mode']}")
+    print(f"Repository layout: {status['repository_layout']}")
+    print(f"Base repository:   {status['base_repo'] or '(unknown)'}")
+    print(f"Head repository:   {status['head_repo'] or '(unknown)'}")
+    print(f"Base ref:          {status['base_ref']}")
+    print(f"Push remote:       {status['push_remote']}")
+    print(f"Layers:            {status['layers']}")
+    print(f"gh-stack:          {'installed' if status['gh_stack_installed'] else 'not installed'}")
+    if not status["configured_repo_matches"]:
+        print(
+            f"Repository config: mismatch ({status['configured_repo']} does not match "
+            f"{status['detected_base_repo']})"
+        )
+    if status["mode"] == "native" and not status["native_eligible"]:
+        print("Native stack:      unavailable (GitHub requires all branches in the same repository)")
+    elif status["mode"] == "native" and not status["gh_stack_installed"]:
+        print("Native stack:      unavailable (install with: gh extension install github/gh-stack)")
+    elif status["mode"] == "native":
+        print("Native stack:      supported")
+    else:
+        print("Native stack:      not requested")
+
+
+def cmd_stack_mode(args: argparse.Namespace) -> None:
+    root = repo_root()
+    conf = read_conf(root)
+    requested = (getattr(args, "mode", None) or "").strip()
+    if not requested:
+        cmd_stack_status(argparse.Namespace(json=False))
+        return
+    status = stack_topology(root, conf)
+    print(f"current mode:  {conf.github_mode}")
+    print(f"proposed mode: {requested}")
+    print(f"layout:        {status['repository_layout']}")
+    if requested == "native" and not status["native_eligible"]:
+        die(
+            "GitHub native stacks require all branches in the same repository\n"
+            f"base repository: {status['base_repo'] or '(unknown)'}\n"
+            f"head repository: {status['head_repo'] or '(unknown)'}\n"
+            "Use: ds stack-mode chained --apply"
+        )
+    if requested == "native" and not status["gh_stack_installed"]:
+        die("native mode requires the official extension: gh extension install github/gh-stack")
+    if not bool(getattr(args, "apply", False)):
+        note("dry-run; pass --apply to save this mode")
+        return
+    set_conf_directive(conf, "github_mode", requested)
+    print(f"saved github_mode {requested} in {conf.path}")
 
 
 def gh_default_repo(root: Path) -> str:
@@ -159,13 +293,13 @@ def gh_default_repo_for_remotes(root: Path, *, base_remote: str = "") -> str:
     return ""
 
 
-def gh_head_ref(root: Path, *, base_repo: str, branch: str) -> str:
+def gh_head_ref(root: Path, *, base_repo: str, branch: str, push_remote: str = "") -> str:
     branch = (branch or "").strip()
     base_repo = (base_repo or "").strip()
     if not base_repo or not branch:
         return branch
 
-    push_remote = default_stack_remote(root)
+    push_remote = push_remote or default_stack_remote(root)
     try:
         url = git(["remote", "get-url", push_remote], cwd=root).strip()
     except subprocess.CalledProcessError:
@@ -265,7 +399,8 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
     draft = bool(getattr(args, "draft", False) or env_truthy("DEVSTACK_GH_DRAFT"))
 
     base_remote = (conf.base_remote_ref.split("/", 1)[0] if conf.base_remote_ref else "").strip()
-    repo = gh_default_repo_for_remotes(root, base_remote=base_remote)
+    github_mode = getattr(conf, "github_mode", "chained")
+    repo = getattr(conf, "github_repo", "") or gh_default_repo_for_remotes(root, base_remote=base_remote)
     repo_args = ["--repo", repo] if repo else []
 
     base_default = base_branch_name(conf.base_remote_ref)
@@ -275,7 +410,22 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
     if only is not None and not bool(getattr(args, "standalone", False)):
         base = pr_base_for_layer(conf, only)
 
-    push_remote = default_stack_remote(root)
+    push_remote = getattr(conf, "push_remote", "") or default_stack_remote(root)
+    topology = stack_topology(root, conf)
+    if not topology.get("configured_repo_matches", True):
+        die(
+            f"configured github_repo {topology['configured_repo']} does not match "
+            f"base remote repository {topology['detected_base_repo']}"
+        )
+    if github_mode == "native" and not topology["native_eligible"]:
+        die(
+            "GitHub native stacks require all branches in the same repository\n"
+            f"base repository: {topology['base_repo'] or '(unknown)'}\n"
+            f"head repository: {topology['head_repo'] or '(unknown)'}\n"
+            "Set `github_mode chained` (or run: ds stack-mode chained --apply)."
+        )
+    if github_mode == "native" and apply and not topology["gh_stack_installed"]:
+        die("native mode requires the official extension: gh extension install github/gh-stack")
     # If applying, fail fast with a clear hint when branches aren't pushed yet.
     if apply and push_remote:
         base_default = base_branch_name(conf.base_remote_ref)
@@ -315,7 +465,9 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
             title = title_with_number(title, key_number(entry.key))
         title = " ".join((title or "").splitlines()).strip()
 
-        head_ref = gh_head_ref(root, base_repo=repo, branch=entry.branch) if repo else entry.branch
+        head_ref = (
+            gh_head_ref(root, base_repo=repo, branch=entry.branch, push_remote=push_remote) if repo else entry.branch
+        )
 
         if apply:
             # gh PR create/edit requires the head to exist as a branch on the remote fork.
@@ -392,3 +544,13 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         else:
             print(" ".join(shlex_quote(x) for x in cmd))
         base = entry.branch
+
+    if github_mode == "native":
+        if only is not None:
+            note("native stack linking requires the full stack; run `ds gh-sync` without --only")
+            return
+        link_cmd = native_link_command(conf)
+        if apply:
+            run(link_cmd, cwd=root)
+        else:
+            print(" ".join(shlex_quote(x) for x in link_cmd))

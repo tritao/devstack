@@ -408,6 +408,38 @@ Key idea:
   and defaults the PR base to `upstream/<default-branch>`. Override the latter
   with `DEVSTACK_STACK_BASE_REMOTE` when needed.
 
+Devstack supports two explicit GitHub publication modes while keeping the same
+local cut-point model:
+
+```text
+github_mode chained
+```
+
+uses ordinary chained PR bases and supports cross-fork workflows such as
+`tritao/FreeCAD` into `FreeCAD/FreeCAD`. For same-repository stacks such as
+branches hosted directly in `FreeCAD/coin`, install the official extension and
+select native metadata explicitly:
+
+```bash
+gh extension install github/gh-stack
+ds stack-mode native        # dry-run
+ds stack-mode native --apply
+```
+
+Inspect the persisted mode and repository topology before publication:
+
+```bash
+ds stack-status
+ds stack-status --json
+```
+
+`ds gh-sync` remains dry-run by default. In native mode a full-stack sync also
+prints the derived `gh stack link` command; `--apply` runs it only after PR
+synchronization. Native mode is rejected before mutation when the base and head
+branches belong to different repositories. Devstack remains the local source
+of truth, so do not run `gh stack init`, `modify`, `rebase`, or `sync` alongside
+the same stack.
+
 Common commands:
 
 - Refresh local PR branches to match `.devstack/stack.conf`:

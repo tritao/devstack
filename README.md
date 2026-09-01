@@ -100,6 +100,12 @@ Stack configuration and generated PR bodies remain local to each target
 worktree under `.devstack/`. The standalone checkout supplies the executable;
 it does not own the target project's stack state.
 
+Stack publication defaults to `github_mode chained`, which works for both
+same-repository and cross-fork PRs. Same-repository projects may explicitly use
+GitHub's native stack metadata with `ds stack-mode native --apply`; Devstack
+rejects native mode for cross-fork layouts. Run `ds stack-status --json` before
+automated stack operations and review `ds gh-sync` before using `--apply`.
+
 ## Lint tooling
 
 When `ds lint` or `ds provision --python-lint` uses the default `origin`
