@@ -251,8 +251,8 @@ def pr_base_for_layer(conf: StackConfig, layer: int) -> str:
     return conf.entries[layer - 2].branch
 
 
-def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str]]) -> None:
-    # entries: (key, sha, body_or_empty)
+def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str, str]]) -> None:
+    # entries: (key, branch, sha, body_or_empty)
     default_dir = default_body_dir(root, conf.path, conf.pr_prefix)
     lines: list[str] = []
     lines.append("# Cut-point branches for stacked PRs (GitHub).")
@@ -269,7 +269,7 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str]
     lines.append("#   ignore <commit-ish|ref>        Exclude commit from generated PR branches (optional; enables filtered mode)")
     lines.append("#")
     lines.append("# Stack entries:")
-    lines.append("#   <branch-key-or-name> <commit-ish> [body-file]")
+    lines.append("#   commit <key> <branch> <commit-ish> [body-file]")
     lines.append("#")
     lines.append("# This file is generated/updated by `tools/devstack/devstack.sh capture`.")
     lines.append("")
@@ -297,11 +297,11 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str]
         for item in conf.ignore:
             lines.append(f"ignore {item}")
         lines.append("")
-    for key, sha, body in entries:
+    for key, branch, sha, body in entries:
         if body:
-            lines.append(f"{key} {sha} {body}")
+            lines.append(f"commit {key} {branch} {sha} {body}")
         else:
-            lines.append(f"{key} {sha}")
+            lines.append(f"commit {key} {branch} {sha}")
     conf.path.parent.mkdir(parents=True, exist_ok=True)
     conf.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"captured SHAs into {conf.path}")
@@ -311,7 +311,7 @@ def cmd_capture(args: argparse.Namespace) -> None:
     root = repo_root()
     conf = read_conf(root)
 
-    out_entries: list[tuple[str, str, str]] = []
+    out_entries: list[tuple[str, str, str, str]] = []
     for entry in conf.entries:
         branch_name = entry.branch
         if filtered_mode(conf):
@@ -326,7 +326,7 @@ def cmd_capture(args: argparse.Namespace) -> None:
         body = entry.body
         if body and Path(body) == default_body:
             body = ""
-        out_entries.append((entry.key, sha, body))
+        out_entries.append((entry.key, entry.branch, sha, body))
 
     write_conf(root, conf, out_entries)
 
