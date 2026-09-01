@@ -284,11 +284,10 @@ def cmd_wt_feature(args: argparse.Namespace) -> None:
 
 def cmd_wt_fresh(args: argparse.Namespace) -> None:
     """Refresh and build a pristine baseline before creating a feature worktree."""
-    current_root = repo_root()
-    initial_env = load_devstack_env(root=current_root)
+    initial_env = load_devstack_env()
     configured_golden = initial_env.get("DEVSTACK_GOLDEN_ROOT", "").strip()
-    golden = Path(args.golden_dir or configured_golden).expanduser().resolve() if (args.golden_dir or configured_golden) else current_root
-    golden = repo_root(golden)
+    selected_golden = (args.golden_dir or configured_golden).strip()
+    golden = repo_root(Path(selected_golden).expanduser().resolve()) if selected_golden else repo_root()
     remote = args.remote
     main_branch = args.main_branch
 
@@ -349,10 +348,9 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
 
 
 def cmd_wt_remove(args: argparse.Namespace) -> None:
-    current_root = repo_root()
-    initial_env = load_devstack_env(root=current_root)
+    initial_env = load_devstack_env()
     configured_golden = initial_env.get("DEVSTACK_GOLDEN_ROOT", "").strip()
-    root = repo_root(Path(configured_golden).expanduser().resolve()) if configured_golden else current_root
+    root = repo_root(Path(configured_golden).expanduser().resolve()) if configured_golden else repo_root()
     requested = Path(args.dir).expanduser().resolve() if args.dir else None
     matches = [
         path

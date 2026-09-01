@@ -26,6 +26,33 @@ def args(**overrides: object) -> argparse.Namespace:
 
 
 class TestWtFresh(unittest.TestCase):
+    def test_uses_configured_golden_without_discovering_current_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            golden = Path(td) / "FreeCAD-master"
+            golden.mkdir()
+
+            def resolve_repo(path: Path | None = None) -> Path:
+                self.assertEqual(golden, path)
+                return golden
+
+            def fake_git(argv: list[str], **_: object) -> str:
+                if argv[0] == "status":
+                    return ""
+                raise subprocess.CalledProcessError(1, ["git", *argv])
+
+            with (
+                patch("tools.devstack.commands.worktrees.repo_root", side_effect=resolve_repo),
+                patch(
+                    "tools.devstack.commands.worktrees.load_devstack_env",
+                    return_value={"DEVSTACK_GOLDEN_ROOT": str(golden)},
+                ),
+                patch("tools.devstack.commands.worktrees.git", side_effect=fake_git),
+                patch("tools.devstack.commands.worktrees.current_branch", return_value="main"),
+                patch("tools.devstack.commands.worktrees.run"),
+                patch.dict("os.environ", {}, clear=True),
+            ):
+                cmd_wt_fresh(args(dir=str(Path(td) / "new-worktree")))
+
     def test_builds_before_creating_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             golden = Path(td) / "FreeCAD-master"
