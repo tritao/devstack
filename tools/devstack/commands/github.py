@@ -327,7 +327,24 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
 
         pr_number = gh_pr_number_for_head(root, head_ref, repo)
         if pr_number:
-            cmd = ["gh", "pr", "edit", pr_number, *repo_args, "--base", base, "--title", title]
+            if repo:
+                # `gh pr edit` in older gh releases queries the retired
+                # Projects Classic field even when only editing title/base/body.
+                # The REST endpoint updates exactly those fields and works with
+                # both older and current gh versions.
+                cmd = [
+                    "gh",
+                    "api",
+                    f"repos/{repo}/pulls/{pr_number}",
+                    "--method",
+                    "PATCH",
+                    "-f",
+                    f"base={base}",
+                    "-f",
+                    f"title={title}",
+                ]
+            else:
+                cmd = ["gh", "pr", "edit", pr_number, *repo_args, "--base", base, "--title", title]
         else:
             cmd = ["gh", "pr", "create", *repo_args, "--head", head_ref, "--base", base, "--title", title]
             if draft:
@@ -335,9 +352,13 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
 
         if body_file.is_file():
             gh_body_file = body_file_for_gh(root, entry, body_file)
-            cmd.extend(["--body-file", str(gh_body_file)])
+            if pr_number and repo:
+                cmd.extend(["-F", f"body=@{gh_body_file}"])
+            else:
+                cmd.extend(["--body-file", str(gh_body_file)])
         else:
-            cmd.extend(["--body", f"Stacked PR: {entry.branch} ({entry.sha})"])
+            body = f"Stacked PR: {entry.branch} ({entry.sha})"
+            cmd.extend(["-f", f"body={body}"] if pr_number and repo else ["--body", body])
 
         if apply:
             try:

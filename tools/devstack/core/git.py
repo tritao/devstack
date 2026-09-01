@@ -66,7 +66,15 @@ def remote_ref_exists(root: Path, ref: str) -> bool:
 
 
 def default_base_remote_ref(root: Path) -> str:
-    remote = default_stack_remote(root)
+    configured_remote = (os.environ.get("DEVSTACK_STACK_BASE_REMOTE", "") or "").strip()
+    if configured_remote and remote_exists(root, configured_remote):
+        remote = configured_remote
+    elif remote_exists(root, "upstream"):
+        # In the conventional fork layout, origin is the writable fork while
+        # upstream is the repository that PRs should target.
+        remote = "upstream"
+    else:
+        remote = default_stack_remote(root)
     env_branch = (os.environ.get("DEVSTACK_STACK_MAIN_BRANCH", "") or "").strip()
     if env_branch:
         # Treat as a preference: if it doesn't exist in this repo, fall back to remote HEAD.

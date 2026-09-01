@@ -404,6 +404,9 @@ If you like working as a sequence of smaller PRs while frequently rebasing/reord
 Key idea:
 
 - `.devstack/stack.conf` defines a base branch plus a list of PR layer branches and their cut-point SHAs.
+- In a conventional fork checkout, Devstack pushes layer branches to `origin`
+  and defaults the PR base to `upstream/<default-branch>`. Override the latter
+  with `DEVSTACK_STACK_BASE_REMOTE` when needed.
 
 Common commands:
 
