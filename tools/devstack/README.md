@@ -397,6 +397,48 @@ Force-disable distcc (even if auto-enabled):
 ./tools/devstack/devstack.sh build --preset debug --no-distcc -j12
 ```
 
+## Pinned stack dependencies
+
+A repository can consume a published layer from another Devstack-managed
+repository through a Git submodule. Declare each dependency in
+`.devstack/dependencies.conf`:
+
+```text
+# dependency <name> <submodule-path> <OWNER/REPO> <published-branch>
+dependency coin src/3rdParty/coin FreeCAD/coin stack/retained-instance-data
+```
+
+Inspect the committed gitlink, initialized checkout, and published branch head:
+
+```bash
+ds dep-status
+ds dep-status coin --json
+```
+
+Resolve a layer from the dependency's standalone stack worktree and propose a
+gitlink update:
+
+```bash
+ds dep-pin coin \
+  --from-stack /path/to/coin-stack-worktree \
+  --layer 027-pr-80
+```
+
+`dep-pin` is dry-run by default. It requires the selected SHA to exactly match
+the selected layer's published remote branch head. It also refuses dirty
+submodules and pre-existing staged gitlink updates. After review, apply it:
+
+```bash
+ds dep-pin coin \
+  --from-stack /path/to/coin-stack-worktree \
+  --layer 027-pr-80 \
+  --apply
+```
+
+The apply step fetches and checks out the published commit in detached mode,
+then stages only the superproject gitlink. Development remains in the standalone
+dependency worktree; the consumer's submodule is only a locked build input.
+
 ## Stacked PR Management (Optional)
 
 If you like working as a sequence of smaller PRs while frequently rebasing/reordering commits, devstack can manage a PR “stack”.

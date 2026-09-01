@@ -11,6 +11,7 @@ from pathlib import Path
 from tools.devstack.core.proc import die
 from tools.devstack.commands.bodies import cmd_body_context, cmd_body_prune, cmd_body_refresh
 from tools.devstack.commands.build import cmd_build
+from tools.devstack.commands.dependencies import cmd_dep_pin, cmd_dep_status
 from tools.devstack.commands.github import (
     cmd_gh_sync,
     cmd_pr_layer,
@@ -80,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         [
             ("Worktrees", []),
             ("Build", []),
+            ("Dependencies", []),
             ("Lint", []),
             ("Stack", []),
             ("GitHub", []),
@@ -102,6 +104,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     cmd("list", "List stack entries from .devstack/stack.conf.", category="Stack")
     cmd("log", "Show git log per stack layer.", category="Stack")
+    dst = cmd("dep-status", "Inspect configured submodule dependency pins and publication state.", category="Dependencies")
+    dst.add_argument("dependency", nargs="?", help="Dependency name or path (default: all).")
+    dst.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    dp = cmd("dep-pin", "Pin a submodule to a published Devstack layer (dry-run by default).", category="Dependencies")
+    dp.add_argument("dependency", help="Dependency name or path from .devstack/dependencies.conf.")
+    dp.add_argument("--from-stack", required=True, help="Path to the standalone dependency stack worktree.")
+    dp.add_argument("--layer", default="top", help="Layer key, branch, 1-based number, or 'top' (default).")
+    dp.add_argument("--apply", action="store_true", help="Check out and stage the proposed gitlink update.")
     upd = cmd(
         "update",
         "Move PR branch refs to configured SHAs; regenerate filtered PR branches when ignore rules exist.",
@@ -465,6 +475,10 @@ def main(argv: list[str]) -> None:
             cmd_list(ns)
         elif cmd == "log":
             cmd_log(ns)
+        elif cmd == "dep-status":
+            cmd_dep_status(ns)
+        elif cmd == "dep-pin":
+            cmd_dep_pin(ns)
         elif cmd == "update":
             cmd_update(ns)
         elif cmd == "push":
