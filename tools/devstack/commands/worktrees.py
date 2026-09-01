@@ -212,11 +212,11 @@ def cmd_wt_feature(args: argparse.Namespace) -> None:
     if dir_path.exists():
         die(f"worktree path already exists: {dir_path}")
     try:
-        git(["show-ref", "--verify", f"refs/heads/{feature_branch}"], cwd=golden)
+        git(["show-ref", "--verify", f"refs/heads/{branch}"], cwd=root)
     except subprocess.CalledProcessError:
         pass
     else:
-        die(f"feature branch already exists: {feature_branch}")
+        die(f"feature branch already exists: {branch}")
 
     print("creating worktree:")
     print(f"  branch: {branch}")
@@ -328,6 +328,8 @@ def cmd_wt_fresh(args: argparse.Namespace) -> None:
     ]
     if args.jobs is not None:
         build_args += ["--jobs", str(args.jobs)]
+    if getattr(args, "sandbox_paths", False):
+        build_args.append("--sandbox-paths")
     run(build_args, cwd=golden)
 
     # Creating the worktree is deliberately last: update or build failures leave
@@ -391,9 +393,9 @@ def cmd_wt_remove(args: argparse.Namespace) -> None:
     if build_dir:
         print(f"  build:  {build_dir}")
 
-    remove_cmd = ["git", "worktree", "remove"]
-    if args.force:
-        remove_cmd.append("--force")
+    # We already enforce cleanliness above. Git still requires --force when a
+    # worktree has initialized submodules, even after they are deinitialized.
+    remove_cmd = ["git", "worktree", "remove", "--force"]
     remove_cmd.append(str(worktree))
     run(remove_cmd, cwd=root)
 

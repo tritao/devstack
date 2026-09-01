@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from tools.devstack.core.adapters import try_load_adapter
-from tools.devstack.core.build_root import ensure_external_build_preset
+from tools.devstack.core.build_root import external_build_path, ensure_external_build_preset, ensure_sandbox_build_preset
 from tools.devstack.core.cmake_presets import (
     cache_var_is_set,
     ensure_basic_presets,
@@ -63,6 +63,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     no_env_file = bool(args.no_env_file)
     env_file_arg = (args.env_file or "").strip()
     want_adapter = getattr(args, "adapter", "auto")
+    sandbox_paths = bool(getattr(args, "sandbox_paths", False))
     adapter = try_load_adapter(root, want_adapter)
 
     if adapter is not None:
@@ -131,7 +132,21 @@ def cmd_build(args: argparse.Namespace) -> None:
         note(f"loading env: {env_path}")
         env = load_env_from_sh(env_path, env)
 
-    if not build_dir:
+    sandbox_source = "/tmp/devstack-build-env/src"
+    sandbox_binary = "/tmp/devstack-build-env/build"
+    physical_build_dir: Path | None = None
+    if sandbox_paths:
+        if not have_cmd("bwrap"):
+            die("--sandbox-paths requires bubblewrap (`bwrap`)")
+        if build_dir:
+            physical_build_dir = Path(build_dir).expanduser().resolve()
+        else:
+            physical_build_dir = external_build_path(root, preset, env)
+            preset = ensure_sandbox_build_preset(root, preset, sandbox_binary)
+        physical_build_dir.mkdir(parents=True, exist_ok=True)
+        build_dir = str(physical_build_dir)
+        note(f"stable build paths: {root} -> {sandbox_source}, {physical_build_dir} -> {sandbox_binary}")
+    elif not build_dir:
         preset = ensure_external_build_preset(root, preset, env)
 
     if ccache_dir:
@@ -218,6 +233,33 @@ def cmd_build(args: argparse.Namespace) -> None:
 
     if clean:
         shutil.rmtree(build_dir, ignore_errors=True)
+        if sandbox_paths:
+            Path(build_dir).mkdir(parents=True, exist_ok=True)
+
+    def sandbox_command(argv: list[str]) -> list[str]:
+        if not sandbox_paths:
+            return argv
+        assert physical_build_dir is not None
+        return [
+            "bwrap",
+            "--die-with-parent",
+            "--bind",
+            "/",
+            "/",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp/devstack-build-env",
+            "--bind",
+            str(root),
+            sandbox_source,
+            "--bind",
+            str(physical_build_dir),
+            sandbox_binary,
+            "--chdir",
+            sandbox_source,
+            *argv,
+        ]
 
     if not build_only:
         print(f"cmake configure: preset={preset}")
@@ -278,11 +320,12 @@ def cmd_build(args: argparse.Namespace) -> None:
                 if not cache_var_is_set(preset_cache, "CMAKE_CXX_COMPILER_LAUNCHER"):
                     cfg_cmd.append("-D")
                     cfg_cmd.append("CMAKE_CXX_COMPILER_LAUNCHER:STRING=ccache")
-        run(cfg_cmd, cwd=root, env=env)
+        run(sandbox_command(cfg_cmd), cwd=root, env=env)
 
     if not configure_only:
         print(f"cmake build: dir={build_dir} jobs={jobs}{' target='+target if target else ''}")
-        cmd = ["cmake", "--build", build_dir, "-j", str(jobs)]
+        command_build_dir = sandbox_binary if sandbox_paths else build_dir
+        cmd = ["cmake", "--build", command_build_dir, "-j", str(jobs)]
         if target:
             cmd += ["--target", target]
-        run(cmd, cwd=root, env=env)
+        run(sandbox_command(cmd), cwd=root, env=env)

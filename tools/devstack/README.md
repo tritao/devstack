@@ -322,6 +322,19 @@ export DEVSTACK_BUILD_ROOT=/mnt/builds
 
 Each preset is stored below `$DEVSTACK_BUILD_ROOT/<worktree-name>/<preset>`.
 
+Experimental stable-path builds use Bubblewrap so every worktree appears to
+CMake and the compiler at the same virtual source and binary paths:
+
+```bash
+ds build --preset debug --ccache-launcher --sandbox-paths
+```
+
+Physical outputs remain isolated below
+`$DEVSTACK_BUILD_ROOT/<worktree>/sandbox/<preset>`. Bubblewrap is used here for
+path normalization, not as a security boundary. Build and test targets should
+be invoked with `ds build --sandbox-paths`; direct launches, debuggers, and IDEs
+do not yet enter the same namespace. This mode therefore remains opt-in.
+
 Env-file precedence (first match wins):
 
 - `--env-file <path>`

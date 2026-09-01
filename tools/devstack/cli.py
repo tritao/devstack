@@ -215,6 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
     wtf.add_argument("--dir", help="Worktree path (default: <golden-parent>/<repo>-worktrees/<name>).")
     wtf.add_argument("--preset", default="debug", help="Golden build preset (default: debug).")
     wtf.add_argument("--jobs", "-j", type=int, default=None, help="Golden build jobs (default: auto).")
+    wtf.add_argument("--sandbox-paths", action="store_true", help="Build golden through stable virtual source/build paths.")
 
     wtr = cmd(
         "wt-remove",
@@ -310,6 +311,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--configure-only", action="store_true")
     b.add_argument("--build-only", action="store_true")
     b.add_argument("--clean", action="store_true")
+    b.add_argument("--sandbox-paths", action="store_true", help="Experimental: build through stable Bubblewrap paths for cross-worktree caching.")
 
     l = cmd("lint", "Run repo lint checks (wrapping tools/lint scripts).", category="Lint")
     l.add_argument("--base", help="Git base ref for changed-files mode (default: adapter-defined, usually origin/main)")

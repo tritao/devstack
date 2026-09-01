@@ -80,6 +80,20 @@ parent such as `DEVSTACK_BUILD_ROOT=/mnt/builds`. Devstack generates wrapper
 CMake presets storing each binary tree below
 `$DEVSTACK_BUILD_ROOT/<worktree-name>/<preset>` during `ds build`.
 
+For better ccache reuse between worktrees, install Bubblewrap and opt into
+stable virtual source and build paths:
+
+```bash
+ds build --preset debug --ccache-launcher --sandbox-paths
+```
+
+The real output remains isolated at
+`$DEVSTACK_BUILD_ROOT/<worktree-name>/sandbox/<preset>`. Use the same flag when
+warming the golden checkout through `ds wt-fresh <name> --sandbox-paths` and
+when building targets in the resulting worktree. This is path normalization,
+not a security sandbox, and direct debugger, IDE, and GUI-launch integration is
+not yet wrapped.
+
 Stack configuration and generated PR bodies remain local to each target
 worktree under `.devstack/`. The standalone checkout supplies the executable;
 it does not own the target project's stack state.

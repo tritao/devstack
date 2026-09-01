@@ -45,7 +45,7 @@ class TestWtRemove(unittest.TestCase):
                 patch("tools.devstack.commands.worktrees.shutil.rmtree") as rmtree,
             ):
                 cmd_wt_remove(args())
-            run.assert_called_once_with(["git", "worktree", "remove", str(worktree)], cwd=golden)
+            run.assert_called_once_with(["git", "worktree", "remove", "--force", str(worktree)], cwd=golden)
             rmtree.assert_called_once_with(build_dir)
 
     def test_refuses_dirty_worktree(self) -> None:
