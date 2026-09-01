@@ -11,7 +11,14 @@ from pathlib import Path
 from tools.devstack.core.proc import die
 from tools.devstack.commands.bodies import cmd_body_context, cmd_body_prune, cmd_body_refresh
 from tools.devstack.commands.build import cmd_build
-from tools.devstack.commands.github import cmd_gh_sync, cmd_pr_layer, cmd_push, cmd_stack_mode, cmd_stack_status
+from tools.devstack.commands.github import (
+    cmd_gh_sync,
+    cmd_pr_layer,
+    cmd_push,
+    cmd_stack_doctor,
+    cmd_stack_mode,
+    cmd_stack_status,
+)
 from tools.devstack.commands.lint import cmd_fix, cmd_lint
 from tools.devstack.commands.setup import cmd_doctor, cmd_machine_setup, cmd_provision, cmd_self_check, cmd_shell_alias, cmd_test
 from tools.devstack.commands.stack import (
@@ -111,7 +118,10 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--only", type=int, help="Only push layer N (1-based).")
 
     ghs = cmd("gh-sync", "Create/update PRs via gh (supports --only N).", category="GitHub")
-    ghs.add_argument("--apply", action="store_true", help="Apply changes (default is dry-run).")
+    gh_action = ghs.add_mutually_exclusive_group()
+    gh_action.add_argument("--apply", action="store_true", help="Apply changes directly (default is dry-run).")
+    gh_action.add_argument("--plan", metavar="FILE", help="Write a fingerprinted, reviewable sync plan without mutations.")
+    gh_action.add_argument("--apply-plan", metavar="FILE", help="Apply only if the reviewed plan still matches all inputs.")
     ghs.add_argument("--only", type=int, help="Only create/edit the PR for layer N (1-based).")
     ghs.add_argument(
         "--standalone",
@@ -143,6 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
     sm = cmd("stack-mode", "Show or change the persisted GitHub publication mode.", category="Stack")
     sm.add_argument("mode", nargs="?", choices=("chained", "native"))
     sm.add_argument("--apply", action="store_true", help="Save the selected mode (default: dry-run).")
+    sm.add_argument("--confirm-repository", help="Required OWNER/REPO confirmation when enabling native mode.")
+    sd = cmd("stack-doctor", "Validate stack topology, branches, PR mapping, and native-stack prerequisites.", category="Diagnostics")
+    sd.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     cmd(
         "rebase",
         "Interactive rebase the stack branch (uses --update-refs) and refresh stack config/branches.",
@@ -466,6 +479,8 @@ def main(argv: list[str]) -> None:
             cmd_stack_status(ns)
         elif cmd == "stack-mode":
             cmd_stack_mode(ns)
+        elif cmd == "stack-doctor":
+            cmd_stack_doctor(ns)
         elif cmd == "doctor":
             cmd_doctor(ns)
         elif cmd == "self-check":

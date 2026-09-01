@@ -102,9 +102,11 @@ it does not own the target project's stack state.
 
 Stack publication defaults to `github_mode chained`, which works for both
 same-repository and cross-fork PRs. Same-repository projects may explicitly use
-GitHub's native stack metadata with `ds stack-mode native --apply`; Devstack
-rejects native mode for cross-fork layouts. Run `ds stack-status --json` before
-automated stack operations and review `ds gh-sync` before using `--apply`.
+GitHub's native stack metadata by confirming the repository explicitly with
+`ds stack-mode native --apply --confirm-repository OWNER/REPO`; Devstack
+rejects native mode for cross-fork layouts. Run `ds stack-status` and
+`ds stack-doctor` before automated stack operations. Use `ds gh-sync --plan`
+and `ds gh-sync --apply-plan` so changes since review are rejected.
 
 ## Lint tooling
 

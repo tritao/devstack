@@ -353,7 +353,7 @@ def cmd_rebase(args: argparse.Namespace) -> None:
     cmd_capture(argparse.Namespace())
     if filtered_mode(conf):
         cmd_update(argparse.Namespace())
-    print("next: devstack.sh push && devstack.sh gh-sync --apply")
+    print("next: devstack.sh push && devstack.sh gh-sync --plan .devstack/gh-sync-plan.json")
 
 
 def config_add_ignore(conf_path: Path, ignore_item: str) -> None:

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import shlex
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.devstack.commands.stack import cmd_update, pr_base_for_layer, select_entries
@@ -90,6 +92,9 @@ def cmd_pr_layer(args: argparse.Namespace) -> None:
 def gh_check() -> None:
     if not have_cmd("gh"):
         die("GitHub CLI 'gh' not found on PATH")
+    proc = run(["gh", "auth", "status", "--hostname", "github.com"], check=False, capture=True)
+    if proc.returncode != 0:
+        die("GitHub CLI is not authenticated for github.com (run: gh auth login)")
 
 
 def _parse_github_owner_repo(remote_url: str) -> str:
@@ -224,6 +229,14 @@ def cmd_stack_mode(args: argparse.Namespace) -> None:
     if not bool(getattr(args, "apply", False)):
         note("dry-run; pass --apply to save this mode")
         return
+    if requested == "native":
+        confirmation = (getattr(args, "confirm_repository", "") or "").strip()
+        expected = str(status["base_repo"] or "")
+        if confirmation.lower() != expected.lower():
+            die(
+                "saving native mode requires explicit repository confirmation\n"
+                f"rerun with: --confirm-repository {expected}"
+            )
     set_conf_directive(conf, "github_mode", requested)
     print(f"saved github_mode {requested} in {conf.path}")
 
@@ -384,12 +397,221 @@ def _remote_head_branch_exists(root: Path, remote: str, branch: str) -> bool:
     return bool((proc.stdout or "").strip())
 
 
+def _remote_head_sha(root: Path, remote: str, branch: str) -> str:
+    if not remote or not branch:
+        return ""
+    proc = run(["git", "ls-remote", "--heads", remote, branch], cwd=root, capture=True, check=False)
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return ""
+    return (proc.stdout or "").split()[0]
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _canonical_fingerprint(state: dict[str, object]) -> str:
+    encoded = json.dumps(state, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _sha256_text(encoded)
+
+
+def _current_pr_state(root: Path, repo: str, number: str) -> dict[str, object]:
+    if not repo or not number:
+        return {}
+    proc = run(
+        ["gh", "api", f"repos/{repo}/pulls/{number}"],
+        cwd=root,
+        capture=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return {"number": int(number), "lookup_error": True}
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        return {"number": int(number), "lookup_error": True}
+    return {
+        "number": data.get("number"),
+        "state": data.get("state"),
+        "draft": bool(data.get("draft")),
+        "base": ((data.get("base") or {}).get("ref")),
+        "head": ((data.get("head") or {}).get("ref")),
+        "head_sha": ((data.get("head") or {}).get("sha")),
+        "title": data.get("title"),
+        "body_sha256": _sha256_text(data.get("body") or ""),
+        "updated_at": data.get("updated_at"),
+    }
+
+
+def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, object]:
+    """Capture all local and GitHub inputs that affect a gh-sync operation."""
+    base_remote = conf.base_remote_ref.split("/", 1)[0] if "/" in conf.base_remote_ref else ""
+    push_remote = getattr(conf, "push_remote", "") or default_stack_remote(root)
+    repo = getattr(conf, "github_repo", "") or gh_default_repo_for_remotes(root, base_remote=base_remote)
+    only = getattr(args, "only", None)
+    standalone = bool(getattr(args, "standalone", False))
+    entries = select_entries(conf, only)
+    next_base = base_branch_name(conf.base_remote_ref)
+    if only is not None and not standalone:
+        next_base = pr_base_for_layer(conf, only)
+
+    layers: list[dict[str, object]] = []
+    for entry in entries:
+        try:
+            local_sha = resolve_commitish(root, entry.branch) if filtered_mode(conf) else resolve_commitish(root, entry.sha)
+        except Exception:
+            local_sha = ""
+        body_file = resolved_body_file(conf, entry)
+        body_text = body_file.read_text(encoding="utf-8", errors="replace") if body_file.is_file() else ""
+        title = git(["show", "-s", "--format=%s", local_sha], cwd=root) if local_sha else entry.branch
+        frontmatter_title = title_from_body_frontmatter(body_file) if body_file.is_file() else ""
+        title = frontmatter_title or title_with_number(title, key_number(entry.key))
+        title = " ".join((title or "").splitlines()).strip()
+        head_ref = gh_head_ref(root, base_repo=repo, branch=entry.branch, push_remote=push_remote)
+        pr_number = gh_pr_number_for_head(root, head_ref, repo)
+        layers.append(
+            {
+                "key": entry.key,
+                "branch": entry.branch,
+                "configured_sha": entry.sha,
+                "local_sha": local_sha,
+                "remote_sha": _remote_head_sha(root, push_remote, entry.branch),
+                "desired_base": next_base,
+                "desired_title": title,
+                "desired_body_sha256": _sha256_text(strip_body_frontmatter(body_text)),
+                "pr": _current_pr_state(root, repo, pr_number),
+            }
+        )
+        next_base = entry.branch
+
+    topology = stack_topology(root, conf)
+    return {
+        "schema": 1,
+        "repository_root": str(root.resolve()),
+        "github_mode": getattr(conf, "github_mode", "chained"),
+        "github_repo": repo,
+        "base_ref": conf.base_remote_ref,
+        "base_remote_sha": _remote_head_sha(root, base_remote, base_branch_name(conf.base_remote_ref)),
+        "push_remote": push_remote,
+        "repository_layout": topology["repository_layout"],
+        "native_eligible": topology["native_eligible"],
+        "gh_stack_installed": topology["gh_stack_installed"],
+        "configured_repo_matches": topology["configured_repo_matches"],
+        "only": only,
+        "standalone": standalone,
+        "draft": bool(getattr(args, "draft", False)),
+        "layers": layers,
+    }
+
+
+def write_sync_plan(path: Path, state: dict[str, object]) -> dict[str, object]:
+    plan = {
+        "schema": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "fingerprint": _canonical_fingerprint(state),
+        "summary": {
+            "repository": state["github_repo"],
+            "mode": state["github_mode"],
+            "layers": len(state["layers"]),
+            "native_link": state["github_mode"] == "native" and state["only"] is None,
+        },
+        "state": state,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return plan
+
+
+def cmd_stack_doctor(args: argparse.Namespace) -> None:
+    root = repo_root()
+    conf = read_conf(root)
+    gh_check()
+    state = build_sync_state(root, conf, argparse.Namespace(only=None, standalone=False, draft=False))
+    errors: list[str] = []
+    if not state["github_repo"]:
+        errors.append("GitHub repository could not be determined")
+    if not state["base_remote_sha"]:
+        errors.append(f"base branch is missing on {conf.base_remote_ref}")
+    if state["github_mode"] == "native" and not state["native_eligible"]:
+        errors.append("native mode requires base and head branches in the same repository")
+    if state["github_mode"] == "native" and not state["gh_stack_installed"]:
+        errors.append("native mode requires github/gh-stack")
+    for layer in state["layers"]:
+        if not layer["local_sha"]:
+            errors.append(f"{layer['branch']}: local branch/commit is missing")
+        if not layer["remote_sha"]:
+            errors.append(f"{layer['branch']}: branch is missing on {state['push_remote']}")
+        elif layer["local_sha"] != layer["remote_sha"]:
+            errors.append(
+                f"{layer['branch']}: remote SHA {str(layer['remote_sha'])[:12]} "
+                f"does not match local SHA {str(layer['local_sha'])[:12]}"
+            )
+        pr = layer["pr"]
+        if pr.get("lookup_error"):
+            errors.append(f"{layer['branch']}: existing PR could not be read")
+        if pr and pr.get("head") != layer["branch"]:
+            errors.append(f"{layer['branch']}: PR head is {pr.get('head')}")
+    result = {"ok": not errors, "errors": errors, "state": state}
+    if bool(getattr(args, "json", False)):
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(f"Stack doctor:      {'ok' if not errors else 'FAILED'}")
+        print(f"Repository:        {state['github_repo'] or '(unknown)'}")
+        print(f"Mode:              {state['github_mode']}")
+        print(f"Layout:            {state['repository_layout']}")
+        print(f"Layers:            {len(state['layers'])}")
+        for error in errors:
+            print(f"ERROR: {error}")
+    if errors:
+        raise SystemExit(1)
+
+
 def cmd_gh_sync(args: argparse.Namespace) -> None:
     root = repo_root()
     conf = read_conf(root)
     gh_check()
 
-    apply = bool(args.apply)
+    plan_path = getattr(args, "plan", None)
+    apply_plan_path = getattr(args, "apply_plan", None)
+    apply = bool(getattr(args, "apply", False) or apply_plan_path)
+    if plan_path:
+        state = build_sync_state(root, conf, args)
+        if not state["configured_repo_matches"]:
+            die("cannot create plan: configured github_repo does not match the base remote")
+        if state["github_mode"] == "native" and not state["native_eligible"]:
+            die("cannot create plan: native mode requires a same-repository stack")
+        unsynced = [
+            layer["branch"]
+            for layer in state["layers"]
+            if not layer["local_sha"] or layer["local_sha"] != layer["remote_sha"]
+        ]
+        if not state["base_remote_sha"] or unsynced:
+            details = ", ".join(unsynced) if unsynced else "base branch"
+            die(f"cannot create plan: required remote refs are missing or stale: {details}")
+        plan = write_sync_plan(Path(plan_path).expanduser(), state)
+        print(f"wrote gh-sync plan: {Path(plan_path).expanduser()}")
+        print(f"fingerprint: {plan['fingerprint']}")
+        return
+    if apply_plan_path:
+        path = Path(apply_plan_path).expanduser()
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            die(f"cannot read gh-sync plan {path}: {exc}")
+        saved_state = saved.get("state") or {}
+        args.only = saved_state.get("only")
+        args.standalone = bool(saved_state.get("standalone", False))
+        args.draft = bool(saved_state.get("draft", False))
+        state = build_sync_state(root, conf, args)
+        current = _canonical_fingerprint(state)
+        if saved.get("fingerprint") != current:
+            die(
+                "gh-sync plan is stale; local refs, remote branches, PR state, or configuration changed\n"
+                f"saved:   {saved.get('fingerprint', '(missing)')}\n"
+                f"current: {current}\n"
+                "Generate and review a new plan before applying."
+            )
+        print(f"validated gh-sync plan: {path}")
     if not apply:
         note("dry-run; pass --apply to create/edit PRs")
 
@@ -426,6 +648,17 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         )
     if github_mode == "native" and apply and not topology["gh_stack_installed"]:
         die("native mode requires the official extension: gh extension install github/gh-stack")
+    if github_mode == "native" and apply and not apply_plan_path:
+        die(
+            "native stack mutations require a reviewed plan\n"
+            "run: ds gh-sync --plan .devstack/gh-sync-plan.json\n"
+            "then: ds gh-sync --apply-plan .devstack/gh-sync-plan.json"
+        )
+    if apply:
+        print("mutation summary:")
+        print(f"  repository:        {repo or '(unknown)'}")
+        print(f"  PRs create/update: {len(entries)}")
+        print(f"  native relink:     {'yes' if github_mode == 'native' and only is None else 'no'}")
     # If applying, fail fast with a clear hint when branches aren't pushed yet.
     if apply and push_remote:
         base_default = base_branch_name(conf.base_remote_ref)

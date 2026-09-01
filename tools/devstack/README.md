@@ -423,7 +423,7 @@ select native metadata explicitly:
 ```bash
 gh extension install github/gh-stack
 ds stack-mode native        # dry-run
-ds stack-mode native --apply
+ds stack-mode native --apply --confirm-repository FreeCAD/coin
 ```
 
 Inspect the persisted mode and repository topology before publication:
@@ -431,11 +431,27 @@ Inspect the persisted mode and repository topology before publication:
 ```bash
 ds stack-status
 ds stack-status --json
+ds stack-doctor
 ```
 
+For remote changes, prefer a saved plan over direct application:
+
+```bash
+ds gh-sync --plan .devstack/gh-sync-plan.json
+# Review the JSON plan and approve the mutation explicitly.
+ds gh-sync --apply-plan .devstack/gh-sync-plan.json
+```
+
+The plan fingerprints configuration, topology, local and remote branch SHAs,
+desired PR metadata, and current GitHub PR state. `--apply-plan` rejects the
+operation when any fingerprinted input has changed, requiring a new review.
+`stack-doctor` checks repository topology, the native extension, branch
+availability, and existing PR mapping.
+
 `ds gh-sync` remains dry-run by default. In native mode a full-stack sync also
-prints the derived `gh stack link` command; `--apply` runs it only after PR
-synchronization. Native mode is rejected before mutation when the base and head
+prints the derived `gh stack link` command; `--apply-plan` runs it only after
+the plan is revalidated and PR synchronization succeeds. Direct `--apply` is
+rejected for native stacks. Native mode is rejected before mutation when the base and head
 branches belong to different repositories. Devstack remains the local source
 of truth, so do not run `gh stack init`, `modify`, `rebase`, or `sync` alongside
 the same stack.
@@ -474,7 +490,8 @@ Publish just a single layer (serial workflow, wait for merge):
 Create PRs as drafts:
 
 ```bash
-./tools/devstack/devstack.sh gh-sync --apply --draft
+./tools/devstack/devstack.sh gh-sync --plan .devstack/gh-sync-plan.json --draft
+./tools/devstack/devstack.sh gh-sync --apply-plan .devstack/gh-sync-plan.json
 ./tools/devstack/devstack.sh pr-layer 1 --apply --draft
 ```
 

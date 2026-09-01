@@ -51,5 +51,8 @@ class TestMachineSetup(unittest.TestCase):
             self.assertIn("max_size = 12G", ccache)
             agents = (base / "codex" / "AGENTS.md").read_text()
             self.assertEqual(1, agents.count("# >>> devstack FreeCAD workflow >>>"))
+            self.assertIn("## Devstack publication safety", agents)
+            self.assertIn("ds gh-sync --apply-plan <file>", agents)
+            self.assertIn("including Coin worktrees", agents)
             excludes = (golden / ".git" / "info" / "exclude").read_text()
             self.assertIn("/CMakeUserPresets.json", excludes)
