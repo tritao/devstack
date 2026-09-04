@@ -15,6 +15,8 @@ class StackEntry:
     branch: str
     sha: str
     body: str  # may be empty (convention-based)
+    group: str = ""
+    group_title: str = ""
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,8 @@ def read_conf(root: Path) -> StackConfig:
     push_remote = ""
     ignore: list[str] = []
     entries: list[StackEntry] = []
+    current_group = ""
+    current_group_title = ""
 
     for raw in conf_path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw.strip()
@@ -129,12 +133,27 @@ def read_conf(root: Path) -> StackConfig:
                 die(f"bad ignore directive in {conf_path}: {raw}")
             ignore.extend(parts[1:])
             continue
+        if parts[0] == "group":
+            if len(parts) < 2:
+                die(f"bad group directive in {conf_path}: {raw}")
+            current_group = "" if parts[1] == "-" else parts[1]
+            current_group_title = "" if not current_group else " ".join(parts[2:]) or current_group
+            continue
         if parts[0] in ("commit", "c"):
             if len(parts) < 4:
                 die(f"bad commit directive in {conf_path}: {raw}")
             key, branch, sha = parts[1], parts[2], parts[3]
             body = parts[4] if len(parts) >= 5 else ""
-            entries.append(StackEntry(key=key, branch=branch, sha=sha, body=body))
+            entries.append(
+                StackEntry(
+                    key=key,
+                    branch=branch,
+                    sha=sha,
+                    body=body,
+                    group=current_group,
+                    group_title=current_group_title,
+                )
+            )
             continue
 
         # Legacy format:
@@ -148,7 +167,16 @@ def read_conf(root: Path) -> StackConfig:
         branch = key
         if pr_prefix and not branch.startswith("pr/"):
             branch = f"{pr_prefix}{branch}"
-        entries.append(StackEntry(key=key, branch=branch, sha=sha, body=body))
+        entries.append(
+            StackEntry(
+                key=key,
+                branch=branch,
+                sha=sha,
+                body=body,
+                group=current_group,
+                group_title=current_group_title,
+            )
+        )
 
     if not body_dir:
         body_dir = default_body_dir(root, conf_path, pr_prefix)
@@ -200,6 +228,22 @@ def read_conf(root: Path) -> StackConfig:
 
 def filtered_mode(conf: StackConfig) -> bool:
     return bool(conf.ignore)
+
+
+def stack_groups(conf: StackConfig) -> list[tuple[str, str, int]]:
+    """Return configured groups in layer order as (key, title, layer count)."""
+    groups: list[tuple[str, str, int]] = []
+    for entry in conf.entries:
+        group = getattr(entry, "group", "")
+        if not group:
+            continue
+        title = getattr(entry, "group_title", "") or group
+        if groups and groups[-1][0] == group:
+            key, title, count = groups[-1]
+            groups[-1] = (key, title, count + 1)
+        else:
+            groups.append((group, title, 1))
+    return groups
 
 
 def cut_branch_for_entry(conf: StackConfig, entry: StackEntry) -> str:

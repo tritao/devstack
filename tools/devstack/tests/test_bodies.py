@@ -74,3 +74,19 @@ class TestBodies(unittest.TestCase):
             )
         # 10 chars max => 9 + ellipsis.
         self.assertIn("- `2454222e59`: " + ("x" * 9) + "…", out)
+
+    def test_autogen_includes_optional_group(self) -> None:
+        out = autogen_block(
+            base_ref="main",
+            pr_base="pr/base",
+            stack_pos=3,
+            stack_total=8,
+            from_ref="a",
+            to_ref="b",
+            commits="",
+            group="retained-core",
+            group_title="Retained core and snapshots",
+            group_pos=2,
+            group_total=6,
+        )
+        self.assertIn("- Group: `retained-core` — Retained core and snapshots (`2/6`)", out)

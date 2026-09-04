@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.devstack.core.stackconf import base_branch_name, default_body_dir, filtered_mode, key_number, read_conf
+from tools.devstack.core.stackconf import base_branch_name, default_body_dir, filtered_mode, key_number, read_conf, stack_groups
 
 
 def _git(root: Path, argv: list[str]) -> str:
@@ -75,3 +75,35 @@ class TestStackConf(unittest.TestCase):
             conf_path = root / ".devstack" / "stack.conf"
             got = default_body_dir(root, conf_path, "pr/gui-refactor/")
             self.assertEqual(got, ".devstack/pr-bodies/gui-refactor")
+
+    def test_group_directives_are_optional_layer_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+            (root / ".devstack").mkdir()
+            (root / ".devstack" / "stack.conf").write_text(
+                "\n".join(
+                    [
+                        "base origin/main",
+                        "group core Retained core",
+                        "commit 001-one stack/one abc one.md",
+                        "commit 002-two stack/two def two.md",
+                        "group optimization Performance and lifetime",
+                        "commit 003-three stack/three fed three.md",
+                        "group -",
+                        "commit 004-four stack/four cab four.md",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            conf = read_conf(root)
+            self.assertEqual(conf.entries[0].group, "core")
+            self.assertEqual(conf.entries[0].group_title, "Retained core")
+            self.assertEqual(conf.entries[2].group, "optimization")
+            self.assertEqual(conf.entries[3].group, "")
+            self.assertEqual(
+                stack_groups(conf),
+                [("core", "Retained core", 2), ("optimization", "Performance and lifetime", 1)],
+            )

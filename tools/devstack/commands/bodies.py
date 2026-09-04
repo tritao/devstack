@@ -32,6 +32,10 @@ def autogen_block(
     from_ref: str,
     to_ref: str,
     commits: str,
+    group: str = "",
+    group_title: str = "",
+    group_pos: int = 0,
+    group_total: int = 0,
 ) -> str:
     try:
         max_subject = int((os.environ.get("DEVSTACK_BODY_COMMIT_SUBJECT_MAX", "") or "60").strip())
@@ -51,8 +55,7 @@ def autogen_block(
             else:
                 formatted.append(f"- {line}")
         commits_lines = "\n".join(formatted)
-    return "\n".join(
-        [
+    metadata = [
             "<!-- AUTOGEN:BEGIN -->",
             "### Patch Set",
             "",
@@ -62,6 +65,12 @@ def autogen_block(
             f"- Base: `{base_ref}`",
             f"- PR base (depends-on): `{pr_base}`",
             f"- Stack: `{stack_pos}/{stack_total}`",
+    ]
+    if group:
+        group_progress = f" (`{group_pos}/{group_total}`)" if group_pos and group_total else ""
+        metadata.append(f"- Group: `{group}` — {group_title or group}{group_progress}")
+    metadata.extend(
+        [
             f"- Range: `{from_ref}..{to_ref}`",
             "",
             "#### Commits",
@@ -70,6 +79,7 @@ def autogen_block(
             "<!-- AUTOGEN:END -->",
         ]
     )
+    return "\n".join(metadata)
 
 
 AUTOGEN_RE = re.compile(r"<!-- AUTOGEN:BEGIN -->[\s\S]*?<!-- AUTOGEN:END -->", re.MULTILINE)
@@ -140,6 +150,8 @@ def cmd_body_refresh(args: argparse.Namespace) -> None:
     pr_base = base_display
     total = len(conf.entries)
     for idx, entry in enumerate(conf.entries, start=1):
+        group_entries = [candidate for candidate in conf.entries if candidate.group == entry.group]
+        group_pos = group_entries.index(entry) + 1 if entry.group else 0
         from_ref = prev
         to_ref = entry.branch if filtered_mode(conf) else entry.sha
         if filtered_mode(conf):
@@ -158,6 +170,10 @@ def cmd_body_refresh(args: argparse.Namespace) -> None:
             from_ref=from_ref,
             to_ref=to_ref,
             commits=commits,
+            group=entry.group,
+            group_title=entry.group_title,
+            group_pos=group_pos,
+            group_total=len(group_entries) if entry.group else 0,
         )
         body_path = resolved_body_file(conf, entry)
         if entry.body and not body_path.exists():
@@ -192,6 +208,8 @@ def cmd_body_context(args: argparse.Namespace) -> None:
         print(f"## Context: `{entry.branch}`")
         print()
         print(f"- Base: `{base_display}`")
+        if entry.group:
+            print(f"- Group: `{entry.group}` — {entry.group_title or entry.group}")
         print(f"- Range: `{from_ref}..{to_ref}`")
         print()
         print("### Commits")

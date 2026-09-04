@@ -130,6 +130,8 @@ def _gh_stack_installed(root: Path) -> bool:
 
 
 def stack_topology(root: Path, conf) -> dict[str, object]:
+    from tools.devstack.core.stackconf import stack_groups
+
     base_remote = conf.base_remote_ref.split("/", 1)[0] if "/" in conf.base_remote_ref else ""
     push_remote = getattr(conf, "push_remote", "") or default_stack_remote(root)
     detected_base_repo = _repo_for_remote(root, base_remote)
@@ -158,6 +160,10 @@ def stack_topology(root: Path, conf) -> dict[str, object]:
         "gh_stack_installed": extension,
         "valid": getattr(conf, "github_mode", "chained") != "native" or (same_repo and extension),
         "layers": len(conf.entries),
+        "groups": [
+            {"key": key, "title": title, "layers": count}
+            for key, title, count in stack_groups(conf)
+        ],
     }
 
 
@@ -208,6 +214,10 @@ def cmd_stack_status(args: argparse.Namespace) -> None:
     print(f"Base ref:          {status['base_ref']}")
     print(f"Push remote:       {status['push_remote']}")
     print(f"Layers:            {status['layers']}")
+    if status["groups"]:
+        print(f"Groups:            {len(status['groups'])}")
+        for group in status["groups"]:
+            print(f"  {group['key']}: {group['title']} ({group['layers']} layers)")
     print(f"gh-stack:          {'installed' if status['gh_stack_installed'] else 'not installed'}")
     if not status["configured_repo_matches"]:
         print(
