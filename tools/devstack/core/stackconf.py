@@ -27,6 +27,7 @@ class StackConfig:
     cut_prefix: str
     body_dir: str
     body_template: str
+    body_detail: str
     github_mode: str
     github_repo: str
     push_remote: str
@@ -68,6 +69,7 @@ def read_conf(root: Path) -> StackConfig:
     cut_prefix = ""
     body_dir = ""
     body_template = ""
+    body_detail = "compact"
     github_mode = "chained"
     github_repo = ""
     push_remote = ""
@@ -104,6 +106,11 @@ def read_conf(root: Path) -> StackConfig:
             if len(parts) != 2:
                 die(f"bad body_template directive in {conf_path}: {raw}")
             body_template = parts[1]
+            continue
+        if parts[0] == "body_detail":
+            if len(parts) != 2 or parts[1] not in ("compact", "full"):
+                die(f"bad body_detail directive in {conf_path}: {raw} (expected compact|full)")
+            body_detail = parts[1]
             continue
         if parts[0] == "github_mode":
             if len(parts) != 2 or parts[1] not in ("chained", "native"):
@@ -218,6 +225,7 @@ def read_conf(root: Path) -> StackConfig:
         cut_prefix=cut_prefix,
         body_dir=body_dir,
         body_template=body_template,
+        body_detail=body_detail,
         github_mode=github_mode,
         github_repo=github_repo,
         push_remote=push_remote,

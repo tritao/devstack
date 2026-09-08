@@ -527,6 +527,12 @@ body_template .devstack/pr-body-template.md
 
 The template may contain `{{ title }}` for the JSON-quoted PR title and `{{ autogen }}` for the generated stack metadata block. Existing body files keep their handwritten content; `body-refresh` replaces only their `AUTOGEN` block.
 
+Generated stack metadata is compact by default: it keeps the patch-set position and dependency notice without commit hashes or ranges. To include the full commit list and revision range, add this to `.devstack/stack.conf`:
+
+```text
+body_detail full
+```
+
 To override the title, add a YAML frontmatter block at the top of the PR body file:
 
 ```md

@@ -36,6 +36,7 @@ def autogen_block(
     group_title: str = "",
     group_pos: int = 0,
     group_total: int = 0,
+    detail: str = "compact",
 ) -> str:
     try:
         max_subject = int((os.environ.get("DEVSTACK_BODY_COMMIT_SUBJECT_MAX", "") or "60").strip())
@@ -60,25 +61,26 @@ def autogen_block(
             "### Patch Set",
             "",
             "> [!IMPORTANT]",
-            f"> This PR is part of a stacked series (`{stack_pos}/{stack_total}`) and depends on `{pr_base}` (the PR base branch). Review/merge in order.",
-            "",
-            f"- Base: `{base_ref}`",
-            f"- PR base (depends-on): `{pr_base}`",
-            f"- Stack: `{stack_pos}/{stack_total}`",
+            f"> Part `{stack_pos}/{stack_total}` of a stacked series. Depends on `{pr_base}`; review and merge in order.",
     ]
     if group:
+        metadata.append("")
         group_progress = f" (`{group_pos}/{group_total}`)" if group_pos and group_total else ""
         metadata.append(f"- Group: `{group}` — {group_title or group}{group_progress}")
-    metadata.extend(
-        [
-            f"- Range: `{from_ref}..{to_ref}`",
-            "",
-            "#### Commits",
-            commits_lines,
-            "",
-            "<!-- AUTOGEN:END -->",
-        ]
-    )
+    if detail == "full":
+        metadata.append("")
+        metadata.extend(
+            [
+                f"- Stack: `{stack_pos}/{stack_total}`",
+                f"- Base: `{base_ref}`",
+                f"- PR base (depends-on): `{pr_base}`",
+                f"- Range: `{from_ref}..{to_ref}`",
+                "",
+                "#### Commits",
+                commits_lines,
+            ]
+        )
+    metadata.extend(["", "<!-- AUTOGEN:END -->"])
     return "\n".join(metadata)
 
 
@@ -174,6 +176,7 @@ def cmd_body_refresh(args: argparse.Namespace) -> None:
             group_title=entry.group_title,
             group_pos=group_pos,
             group_total=len(group_entries) if entry.group else 0,
+            detail=conf.body_detail,
         )
         body_path = resolved_body_file(conf, entry)
         if entry.body and not body_path.exists():
