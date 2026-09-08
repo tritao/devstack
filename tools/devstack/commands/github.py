@@ -24,15 +24,18 @@ from tools.devstack.core.stackconf import (
 )
 
 
-def body_file_for_gh(root: Path, entry, body_file: Path) -> Path:
+def body_file_for_gh(root: Path, entry, body_file: Path, *, body_text: str | None = None) -> Path:
     """Return a body-file path safe for `gh pr create/edit` (frontmatter stripped)."""
-    try:
-        text = body_file.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return body_file
+    if body_text is None:
+        try:
+            text = body_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return body_file
+    else:
+        text = body_text
 
     stripped = strip_body_frontmatter(text)
-    if stripped == text:
+    if body_text is None and stripped == text:
         return body_file
 
     tmp_dir = root / ".devstack" / "tmp" / "gh-sync-bodies"
@@ -40,6 +43,29 @@ def body_file_for_gh(root: Path, entry, body_file: Path) -> Path:
     out = tmp_dir / f"{sanitize_key_to_filename(entry.key)}.md"
     out.write_text(stripped, encoding="utf-8")
     return out
+
+
+def resolve_body_dependency_link(root: Path, conf, entry, body_text: str, repo: str, push_remote: str) -> str:
+    """Link a generated depends-on branch to its PR when the predecessor is published."""
+    try:
+        index = conf.entries.index(entry)
+    except ValueError:
+        return body_text
+    if index == 0 or not repo:
+        return body_text
+
+    predecessor = conf.entries[index - 1]
+    head_ref = gh_head_ref(root, base_repo=repo, branch=predecessor.branch, push_remote=push_remote)
+    pr_number = gh_pr_number_for_head(root, head_ref, repo)
+    if not pr_number:
+        return body_text
+
+    reference = f"[#{pr_number}](https://github.com/{repo}/pull/{pr_number})"
+    body_text = body_text.replace(f"Depends on `{predecessor.branch}`;", f"Depends on {reference};")
+    return body_text.replace(
+        f"PR base (depends-on): `{predecessor.branch}`",
+        f"PR base (depends-on): {reference}",
+    )
 
 
 def shlex_quote(s: str) -> str:
@@ -491,6 +517,7 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
             local_sha = ""
         body_file = resolved_body_file(conf, entry)
         body_text = body_file.read_text(encoding="utf-8", errors="replace") if body_file.is_file() else ""
+        body_text = resolve_body_dependency_link(root, conf, entry, body_text, repo, push_remote)
         title = git(["show", "-s", "--format=%s", local_sha], cwd=root) if local_sha else entry.branch
         frontmatter_title = title_from_body_frontmatter(body_file) if body_file.is_file() else ""
         title = frontmatter_title or title_with_number(title, key_number(entry.key))
@@ -730,6 +757,20 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
             "run: ds gh-sync --plan .devstack/gh-sync-plan.json\n"
             "then: ds gh-sync --apply-plan .devstack/gh-sync-plan.json"
         )
+
+    # Resolve every body before any PR is created or edited. This keeps an
+    # apply-plan deterministic when several previously unpublished layers are
+    # synchronized together; newly assigned PR numbers are picked up on the
+    # next plan instead of changing reviewed content mid-apply.
+    resolved_bodies: dict[str, str] = {}
+    for entry in entries:
+        body_file = resolved_body_file(conf, entry)
+        if body_file.is_file():
+            body_text = body_file.read_text(encoding="utf-8", errors="replace")
+            resolved_bodies[entry.branch] = resolve_body_dependency_link(
+                root, conf, entry, body_text, repo, push_remote
+            )
+
     if apply:
         print("mutation summary:")
         print(f"  repository:        {repo or '(unknown)'}")
@@ -820,7 +861,8 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
                 cmd.append("--draft")
 
         if body_file.is_file():
-            gh_body_file = body_file_for_gh(root, entry, body_file)
+            body_text = resolved_bodies[entry.branch]
+            gh_body_file = body_file_for_gh(root, entry, body_file, body_text=body_text)
             if pr_number and repo:
                 desired_body = gh_body_file.read_text(encoding="utf-8", errors="replace")
                 if current_pr.get("body_sha256") != _sha256_text(desired_body):

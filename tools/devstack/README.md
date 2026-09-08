@@ -533,6 +533,8 @@ Generated stack metadata is compact by default: it keeps the patch-set position 
 body_detail full
 ```
 
+During `gh-sync`, a published predecessor branch in the dependency notice is replaced with a link to its GitHub PR. Unpublished predecessors retain the branch name until a later sync.
+
 To override the title, add a YAML frontmatter block at the top of the PR body file:
 
 ```md

@@ -6,10 +6,37 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.devstack.commands.github import cmd_gh_sync
+from tools.devstack.commands.github import cmd_gh_sync, resolve_body_dependency_link
 
 
 class TestGhSyncUpdate(unittest.TestCase):
+    def test_resolves_published_predecessor_to_pr_link(self) -> None:
+        first = type("Entry", (), {"branch": "stack/first"})()
+        second = type("Entry", (), {"branch": "stack/second"})()
+        conf = type("Conf", (), {"entries": [first, second]})()
+        body = "> Part `2/3`. Depends on `stack/first`; review and merge in order.\n"
+        with (
+            patch("tools.devstack.commands.github.gh_head_ref", return_value="owner:stack/first"),
+            patch("tools.devstack.commands.github.gh_pr_number_for_head", return_value="29700"),
+        ):
+            resolved = resolve_body_dependency_link(Path("/repo"), conf, second, body, "FreeCAD/FreeCAD", "origin")
+
+        self.assertIn("Depends on [#29700](https://github.com/FreeCAD/FreeCAD/pull/29700);", resolved)
+        self.assertNotIn("`stack/first`", resolved)
+
+    def test_keeps_branch_when_predecessor_is_unpublished(self) -> None:
+        first = type("Entry", (), {"branch": "stack/first"})()
+        second = type("Entry", (), {"branch": "stack/second"})()
+        conf = type("Conf", (), {"entries": [first, second]})()
+        body = "Depends on `stack/first`;"
+        with (
+            patch("tools.devstack.commands.github.gh_head_ref", return_value="owner:stack/first"),
+            patch("tools.devstack.commands.github.gh_pr_number_for_head", return_value=""),
+        ):
+            resolved = resolve_body_dependency_link(Path("/repo"), conf, second, body, "FreeCAD/FreeCAD", "origin")
+
+        self.assertEqual(body, resolved)
+
     def test_updates_existing_pr_via_api(self) -> None:
         entry = type("Entry", (), {"key": "001-layer", "branch": "pr/test/001", "sha": "abc"})()
         conf = type("Conf", (), {"base_remote_ref": "origin/main", "entries": [entry]})()
