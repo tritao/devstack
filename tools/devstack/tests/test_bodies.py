@@ -64,6 +64,37 @@ class TestBodies(unittest.TestCase):
         self.assertNotIn("- Range:", out)
         self.assertNotIn("#### Commits", out)
 
+    def test_single_layer_stack_omits_autogen_block(self) -> None:
+        out = autogen_block(
+            base_ref="main",
+            pr_base="main",
+            stack_pos=1,
+            stack_total=1,
+            from_ref="a",
+            to_ref="b",
+            commits="2454222e59 Single PR change.\n",
+        )
+
+        self.assertEqual(out, "")
+
+    def test_empty_autogen_removes_existing_block(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            body_path = Path(directory) / "body.md"
+            body_path.write_text(
+                "## Summary\n\nDirect summary.\n\n"
+                "<!-- AUTOGEN:BEGIN -->\n"
+                "### Patch Set\n\n"
+                "> Part `1/1` of a stacked series.\n"
+                "<!-- AUTOGEN:END -->\n",
+                encoding="utf-8",
+            )
+
+            update_body_file(body_path, "")
+            body = body_path.read_text(encoding="utf-8")
+
+        self.assertEqual(body, "## Summary\n\nDirect summary.\n")
+        self.assertNotIn("AUTOGEN", body)
+
     def test_full_autogen_commits_format_sha_colon_subject(self) -> None:
         commits = "2454222e59 Add render tests infrastructure.\n"
         with patch.dict(os.environ, {"DEVSTACK_BODY_COMMIT_SUBJECT_MAX": "200"}, clear=False):

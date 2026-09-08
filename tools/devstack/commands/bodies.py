@@ -38,6 +38,9 @@ def autogen_block(
     group_total: int = 0,
     detail: str = "compact",
 ) -> str:
+    if stack_total == 1:
+        return ""
+
     try:
         max_subject = int((os.environ.get("DEVSTACK_BODY_COMMIT_SUBJECT_MAX", "") or "60").strip())
     except ValueError:
@@ -127,7 +130,10 @@ def update_body_file(
     content = body_path.read_text(encoding="utf-8", errors="replace")
     if "<!-- AUTOGEN:BEGIN -->" in content and "<!-- AUTOGEN:END -->" in content:
         stripped = AUTOGEN_RE.sub("", content).rstrip()
-        new_content = (stripped + "\n\n" + autogen + "\n") if stripped else (autogen + "\n")
+        if not autogen:
+            new_content = stripped + "\n" if stripped else ""
+        else:
+            new_content = (stripped + "\n\n" + autogen + "\n") if stripped else (autogen + "\n")
         body_path.write_text(new_content, encoding="utf-8")
         print(f"updated {body_path}")
         return
