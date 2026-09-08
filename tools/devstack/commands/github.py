@@ -479,6 +479,18 @@ def sync_base_for_entry(conf, entry, *, standalone: bool, repository_layout: str
     return conf.entries[index - 1].branch
 
 
+def desired_draft_for_entry(conf, entry, *, force_draft: bool) -> bool:
+    """Return whether a PR should be draft under the configured stack policy."""
+    if force_draft:
+        return True
+    mode = getattr(conf, "draft_mode", "stacked")
+    if mode == "all":
+        return True
+    if mode == "off":
+        return False
+    return conf.entries.index(entry) > 0
+
+
 def _current_pr_state(root: Path, repo: str, number: str) -> dict[str, object]:
     if not repo or not number:
         return {}
@@ -535,6 +547,11 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
         desired_base = sync_base_for_entry(
             conf, entry, standalone=standalone, repository_layout=str(topology["repository_layout"])
         )
+        desired_draft = desired_draft_for_entry(
+            conf,
+            entry,
+            force_draft=bool(getattr(args, "draft", False)),
+        )
         layers.append(
             {
                 "key": entry.key,
@@ -545,6 +562,7 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
                 "desired_base": desired_base,
                 "desired_title": title,
                 "desired_body_sha256": _sha256_text(strip_body_frontmatter(body_text)),
+                "desired_draft": desired_draft,
                 "pr": _current_pr_state(root, repo, pr_number),
             }
         )
@@ -564,6 +582,7 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
         "only": only,
         "standalone": standalone,
         "draft": bool(getattr(args, "draft", False)),
+        "draft_mode": getattr(conf, "draft_mode", "stacked"),
         "layers": layers,
     }
 
@@ -589,6 +608,7 @@ def write_sync_plan(path: Path, state: dict[str, object]) -> dict[str, object]:
                 "base": layer["desired_base"],
                 "title": layer["desired_title"],
                 "body_sha256": layer["desired_body_sha256"],
+                "draft": layer["desired_draft"],
             }
         )
     if state["github_mode"] == "native" and state["only"] is None:
@@ -731,7 +751,7 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
     def env_truthy(key: str) -> bool:
         return os.environ.get(key, "").strip().lower() in ("1", "true", "yes", "on")
 
-    draft = bool(getattr(args, "draft", False) or env_truthy("DEVSTACK_GH_DRAFT"))
+    force_draft = bool(getattr(args, "draft", False) or env_truthy("DEVSTACK_GH_DRAFT"))
 
     base_remote = (conf.base_remote_ref.split("/", 1)[0] if conf.base_remote_ref else "").strip()
     github_mode = getattr(conf, "github_mode", "chained")
@@ -771,6 +791,7 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
     # next plan instead of changing reviewed content mid-apply.
     resolved_bodies: dict[str, str] = {}
     for entry in entries:
+        desired_draft = desired_draft_for_entry(conf, entry, force_draft=force_draft)
         body_file = resolved_body_file(conf, entry)
         if body_file.is_file():
             body_text = body_file.read_text(encoding="utf-8", errors="replace")
@@ -852,7 +873,7 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
                 cmd = ["gh", "pr", "edit", pr_number, *repo_args, "--base", base, "--title", title]
         else:
             cmd = ["gh", "pr", "create", *repo_args, "--head", head_ref, "--base", base, "--title", title]
-            if draft:
+            if desired_draft:
                 cmd.append("--draft")
 
         if body_file.is_file():
@@ -873,31 +894,39 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
                 cmd.extend(["--body", body])
 
         if apply:
-            if pr_number and repo and len(cmd) == 5:
+            metadata_changed = not (pr_number and repo and len(cmd) == 5)
+            draft_changed = bool(pr_number and bool(current_pr.get("draft")) != desired_draft)
+            if not metadata_changed and not draft_changed:
                 print(f"PR unchanged: {pr_number} ({entry.branch})")
                 continue
-            try:
-                run(cmd, cwd=root, check=True, capture=True)
-            except subprocess.CalledProcessError as exc:
-                note("gh-sync failed")
-                if not repo:
-                    note("hint: set a default repo for gh, or pass it via env:")
-                    note("  gh repo set-default OWNER/REPO")
-                    note("  export DEVSTACK_GH_REPO=OWNER/REPO")
-                out = ((exc.stdout or "") + "\n" + (exc.stderr or "")).strip()
-                if "projectCards" in out or "Projects (classic) is being deprecated" in out:
-                    ver = ""
-                    try:
-                        proc = run(["gh", "--version"], cwd=root, check=False, capture=True)
-                        ver = (proc.stdout or "").splitlines()[0].strip()
-                    except Exception:
+            if metadata_changed:
+                try:
+                    run(cmd, cwd=root, check=True, capture=True)
+                except subprocess.CalledProcessError as exc:
+                    note("gh-sync failed")
+                    if not repo:
+                        note("hint: set a default repo for gh, or pass it via env:")
+                        note("  gh repo set-default OWNER/REPO")
+                        note("  export DEVSTACK_GH_REPO=OWNER/REPO")
+                    out = ((exc.stdout or "") + "\n" + (exc.stderr or "")).strip()
+                    if "projectCards" in out or "Projects (classic) is being deprecated" in out:
                         ver = ""
-                    die(
-                        "your `gh` CLI is using a deprecated Projects Classic GraphQL field (projectCards); "
-                        "upgrade `gh` and retry"
-                        + (f" (current: {ver})" if ver else "")
-                    )
-                raise
+                        try:
+                            proc = run(["gh", "--version"], cwd=root, check=False, capture=True)
+                            ver = (proc.stdout or "").splitlines()[0].strip()
+                        except Exception:
+                            ver = ""
+                        die(
+                            "your `gh` CLI is using a deprecated Projects Classic GraphQL field (projectCards); "
+                            "upgrade `gh` and retry"
+                            + (f" (current: {ver})" if ver else "")
+                        )
+                    raise
+            if draft_changed:
+                ready_cmd = ["gh", "pr", "ready", pr_number, *repo_args]
+                if desired_draft:
+                    ready_cmd.append("--undo")
+                run(ready_cmd, cwd=root, check=True, capture=True)
 
             if not pr_number:
                 pr_number = gh_pr_number_for_head(root, head_ref, repo)

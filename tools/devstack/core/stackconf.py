@@ -28,6 +28,7 @@ class StackConfig:
     body_dir: str
     body_template: str
     body_detail: str
+    draft_mode: str
     precommit_check: str
     github_mode: str
     github_repo: str
@@ -71,6 +72,7 @@ def read_conf(root: Path) -> StackConfig:
     body_dir = ""
     body_template = ""
     body_detail = "compact"
+    draft_mode = "stacked"
     precommit_check = "auto"
     github_mode = "chained"
     github_repo = ""
@@ -113,6 +115,11 @@ def read_conf(root: Path) -> StackConfig:
             if len(parts) != 2 or parts[1] not in ("compact", "full"):
                 die(f"bad body_detail directive in {conf_path}: {raw} (expected compact|full)")
             body_detail = parts[1]
+            continue
+        if parts[0] == "draft_mode":
+            if len(parts) != 2 or parts[1] not in ("stacked", "all", "off"):
+                die(f"bad draft_mode directive in {conf_path}: {raw} (expected stacked|all|off)")
+            draft_mode = parts[1]
             continue
         if parts[0] == "precommit_check":
             if len(parts) != 2 or parts[1] not in ("auto", "off"):
@@ -233,6 +240,7 @@ def read_conf(root: Path) -> StackConfig:
         body_dir=body_dir,
         body_template=body_template,
         body_detail=body_detail,
+        draft_mode=draft_mode,
         precommit_check=precommit_check,
         github_mode=github_mode,
         github_repo=github_repo,

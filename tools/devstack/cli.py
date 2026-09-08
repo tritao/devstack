@@ -142,7 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     ghs.add_argument(
         "--draft",
         action="store_true",
-        help="Create new PRs as drafts (default: off; can also be enabled via DEVSTACK_GH_DRAFT=1).",
+        help="Make all PRs drafts (overrides draft_mode; can also be enabled via DEVSTACK_GH_DRAFT=1).",
     )
     pl = cmd("pr-layer", "Update + push + gh-sync for a single PR layer.", category="GitHub")
     pl.add_argument("layer", type=int, help="Layer number (1-based).")
@@ -150,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument(
         "--draft",
         action="store_true",
-        help="Create new PRs as drafts (same as passing --draft to gh-sync).",
+        help="Make the PR a draft (same as passing --draft to gh-sync).",
     )
     pl.add_argument(
         "--standalone",

@@ -12,12 +12,27 @@ from tools.devstack.commands.github import (
     _canonical_fingerprint,
     apply_native_link,
     cmd_gh_sync,
+    desired_draft_for_entry,
     push_planned_branch,
     write_sync_plan,
 )
 
 
 class TestGhSyncPlans(unittest.TestCase):
+    def test_stacked_draft_policy_keeps_only_first_layer_ready(self) -> None:
+        first = type("Entry", (), {"branch": "stack/first"})()
+        second = type("Entry", (), {"branch": "stack/second"})()
+        conf = type("Conf", (), {"entries": [first, second], "draft_mode": "stacked"})()
+
+        self.assertFalse(desired_draft_for_entry(conf, first, force_draft=False))
+        self.assertTrue(desired_draft_for_entry(conf, second, force_draft=False))
+        self.assertTrue(desired_draft_for_entry(conf, first, force_draft=True))
+
+        conf.draft_mode = "off"
+        self.assertFalse(desired_draft_for_entry(conf, second, force_draft=False))
+        conf.draft_mode = "all"
+        self.assertTrue(desired_draft_for_entry(conf, first, force_draft=False))
+
     def test_native_link_preserves_historical_stack_members(self) -> None:
         conf = type("Conf", (), {"base_remote_ref": "upstream/main", "push_remote": "target", "entries": []})()
         error = subprocess.CalledProcessError(
@@ -59,6 +74,7 @@ class TestGhSyncPlans(unittest.TestCase):
             "only": None,
             "standalone": False,
             "draft": False,
+            "draft_mode": "stacked",
             "layers": [
                 {
                     "key": "001-pr-12",
@@ -69,6 +85,7 @@ class TestGhSyncPlans(unittest.TestCase):
                     "desired_base": "freecad-master",
                     "desired_title": "EGL support",
                     "desired_body_sha256": "body-hash",
+                    "desired_draft": False,
                     "pr": {"number": 12, "base": "freecad-master"},
                 }
             ],
@@ -91,6 +108,7 @@ class TestGhSyncPlans(unittest.TestCase):
         self.assertEqual("remote-sha", saved["operations"][0]["expected_remote_sha"])
         self.assertEqual("local-sha", saved["operations"][0]["new_sha"])
         self.assertEqual("pr-sync", saved["operations"][1]["type"])
+        self.assertFalse(saved["operations"][1]["draft"])
         self.assertEqual("native-link", saved["operations"][2]["type"])
 
     def test_plan_records_creation_lease_for_missing_remote_branch(self) -> None:

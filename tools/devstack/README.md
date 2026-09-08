@@ -528,7 +528,7 @@ Common commands:
 - Rebase your stack branch and keep PR refs in sync:
   - `./tools/devstack/devstack.sh rebase`
 
-### PR titles (draftable)
+### PR titles and draft state
 
 By default, `gh-sync` uses the subject of the layer’s cut-point commit as the PR title (and injects `[NNN]` if the key starts with digits like `001-...`).
 
@@ -566,7 +566,17 @@ Publish just a single layer (serial workflow, wait for merge):
 ./tools/devstack/devstack.sh pr-layer 1 --apply
 ```
 
-Create PRs as drafts:
+By default, the first PR is ready for review and later PRs are drafts. `gh-sync`
+also reconciles this state for existing PRs. Override the stack policy in
+`.devstack/stack.conf` when needed:
+
+```text
+draft_mode stacked  # default: first ready, layers 2+ draft
+draft_mode all      # every layer draft
+draft_mode off      # every layer ready
+```
+
+Temporarily make all selected PRs drafts:
 
 ```bash
 ./tools/devstack/devstack.sh gh-sync --plan .devstack/gh-sync-plan.json --draft
