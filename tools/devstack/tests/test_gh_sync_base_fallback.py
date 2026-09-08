@@ -6,10 +6,24 @@ import io
 import unittest
 from unittest.mock import patch
 
-from tools.devstack.commands.github import cmd_gh_sync
+from tools.devstack.commands.github import cmd_gh_sync, sync_base_for_entry
 
 
 class TestGhSyncBaseFallback(unittest.TestCase):
+    def test_cross_fork_layers_plan_against_default_base(self) -> None:
+        first = type("Entry", (), {"branch": "selection-system-refactor"})()
+        second = type("Entry", (), {"branch": "pr/selection/query"})()
+        conf = type("Conf", (), {"base_remote_ref": "upstream/main", "entries": [first, second]})()
+
+        self.assertEqual(
+            "main",
+            sync_base_for_entry(conf, second, standalone=False, repository_layout="cross-fork"),
+        )
+        self.assertEqual(
+            "selection-system-refactor",
+            sync_base_for_entry(conf, second, standalone=False, repository_layout="same-repository"),
+        )
+
     def test_falls_back_to_default_base_when_layer_base_missing(self) -> None:
         # Simulate a fork-style stack: base repo doesn't have pr/... branches.
         fake_conf = type(
@@ -37,7 +51,6 @@ class TestGhSyncBaseFallback(unittest.TestCase):
             patch("tools.devstack.commands.github.default_stack_remote", return_value="tritao"),
             patch("tools.devstack.commands.github.gh_default_repo_for_remotes", return_value="coin3d/coin"),
             patch("tools.devstack.commands.github.select_entries", return_value=[fake_conf.entries[0]]),
-            patch("tools.devstack.commands.github.pr_base_for_layer", return_value="pr/test/000"),
             patch("tools.devstack.commands.github.filtered_mode", return_value=False),
             patch("tools.devstack.commands.github.ensure_commit_exists"),
             patch("tools.devstack.commands.github.git", return_value="Title"),
@@ -46,6 +59,15 @@ class TestGhSyncBaseFallback(unittest.TestCase):
             patch("tools.devstack.commands.github.body_file_for_gh"),
             patch("tools.devstack.commands.github.gh_head_ref", return_value="me:pr/test/001"),
             patch("tools.devstack.commands.github.gh_pr_number_for_head", return_value=""),
+            patch(
+                "tools.devstack.commands.github.stack_topology",
+                return_value={
+                    "configured_repo_matches": True,
+                    "native_eligible": False,
+                    "gh_stack_installed": False,
+                    "repository_layout": "cross-fork",
+                },
+            ),
             patch(
                 "tools.devstack.commands.github._remote_head_branch_exists",
                 side_effect=lambda _r, remote, br: br in ("master", "pr/test/001"),

@@ -10,7 +10,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tools.devstack.commands.stack import cmd_update, pr_base_for_layer, select_entries
+from tools.devstack.commands.stack import cmd_update, select_entries
 from tools.devstack.commands.precommit import run_precommit_gate
 from tools.devstack.core.frontmatter import strip_body_frontmatter, title_from_body_frontmatter, title_with_number
 from tools.devstack.core.git import default_stack_remote, ensure_commit_exists, git, repo_root, resolve_commitish, sanitize_key_to_filename
@@ -470,6 +470,15 @@ def _canonical_fingerprint(state: dict[str, object]) -> str:
     return _sha256_text(encoded)
 
 
+def sync_base_for_entry(conf, entry, *, standalone: bool, repository_layout: str) -> str:
+    """Return the GitHub base branch that can actually host this PR."""
+    base = base_branch_name(conf.base_remote_ref)
+    index = conf.entries.index(entry)
+    if standalone or index == 0 or repository_layout == "cross-fork":
+        return base
+    return conf.entries[index - 1].branch
+
+
 def _current_pr_state(root: Path, repo: str, number: str) -> dict[str, object]:
     if not repo or not number:
         return {}
@@ -506,9 +515,7 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
     only = getattr(args, "only", None)
     standalone = bool(getattr(args, "standalone", False))
     entries = select_entries(conf, only)
-    next_base = base_branch_name(conf.base_remote_ref)
-    if only is not None and not standalone:
-        next_base = pr_base_for_layer(conf, only)
+    topology = stack_topology(root, conf)
 
     layers: list[dict[str, object]] = []
     for entry in entries:
@@ -525,6 +532,9 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
         title = " ".join((title or "").splitlines()).strip()
         head_ref = gh_head_ref(root, base_repo=repo, branch=entry.branch, push_remote=push_remote)
         pr_number = gh_pr_number_for_head(root, head_ref, repo)
+        desired_base = sync_base_for_entry(
+            conf, entry, standalone=standalone, repository_layout=str(topology["repository_layout"])
+        )
         layers.append(
             {
                 "key": entry.key,
@@ -532,15 +542,12 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
                 "configured_sha": entry.sha,
                 "local_sha": local_sha,
                 "remote_sha": _remote_head_sha(root, push_remote, entry.branch),
-                "desired_base": next_base,
+                "desired_base": desired_base,
                 "desired_title": title,
                 "desired_body_sha256": _sha256_text(strip_body_frontmatter(body_text)),
                 "pr": _current_pr_state(root, repo, pr_number),
             }
         )
-        next_base = entry.branch
-
-    topology = stack_topology(root, conf)
     return {
         "schema": 1,
         "repository_root": str(root.resolve()),
@@ -732,11 +739,8 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
     repo_args = ["--repo", repo] if repo else []
 
     base_default = base_branch_name(conf.base_remote_ref)
-    base = base_default
     only = getattr(args, "only", None)
     entries = select_entries(conf, only)
-    if only is not None and not bool(getattr(args, "standalone", False)):
-        base = pr_base_for_layer(conf, only)
 
     push_remote = getattr(conf, "push_remote", "") or default_stack_remote(root)
     topology = stack_topology(root, conf)
@@ -780,27 +784,15 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         print(f"  branches push:     {len(entries) if apply_plan_path else 0}")
         print(f"  PRs create/update: {len(entries)}")
         print(f"  native relink:     {'yes' if github_mode == 'native' and only is None else 'no'}")
-    # If applying, fail fast with a clear hint when branches aren't pushed yet.
-    if apply and push_remote:
-        base_default = base_branch_name(conf.base_remote_ref)
-        if base_remote and not _remote_head_branch_exists(root, base_remote, base):
-            # In fork workflows, stacked PR base branches (pr/... from prior layer) typically exist only on the fork,
-            # not in the upstream/base repo. GitHub requires `--base` to be a branch in the base repo, so fall back.
-            if (
-                base.startswith("pr/")
-                and base != base_default
-                and _remote_head_branch_exists(root, base_remote, base_default)
-                and not bool(getattr(args, "standalone", False))
-            ):
-                note(
-                    f"gh-sync: base branch not found on remote {base_remote}: {base}; "
-                    f"using {base_default} as PR base (fork-style stack)"
-                )
-                base = base_default
-            else:
-                die(f"gh-sync: base branch not found on remote {base_remote}: {base} (check .devstack/stack.conf base)")
-
     for entry in entries:
+        base = sync_base_for_entry(
+            conf,
+            entry,
+            standalone=bool(getattr(args, "standalone", False)),
+            repository_layout=str(topology["repository_layout"]),
+        )
+        if apply and base_remote and not _remote_head_branch_exists(root, base_remote, base):
+            die(f"gh-sync: base branch not found on remote {base_remote}: {base} (check .devstack/stack.conf base)")
         head_commit = entry.sha
         if filtered_mode(conf):
             try:
@@ -883,7 +875,6 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         if apply:
             if pr_number and repo and len(cmd) == 5:
                 print(f"PR unchanged: {pr_number} ({entry.branch})")
-                base = entry.branch
                 continue
             try:
                 run(cmd, cwd=root, check=True, capture=True)
@@ -915,8 +906,6 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
                 print(url)
         else:
             print(" ".join(shlex_quote(x) for x in cmd))
-        base = entry.branch
-
     if github_mode == "native":
         if only is not None:
             note("native stack linking requires the full stack; run `ds gh-sync` without --only")
