@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.devstack.commands.stack import cmd_update, pr_base_for_layer, select_entries
+from tools.devstack.commands.precommit import run_precommit_gate
 from tools.devstack.core.frontmatter import strip_body_frontmatter, title_from_body_frontmatter, title_with_number
 from tools.devstack.core.git import default_stack_remote, ensure_commit_exists, git, repo_root, resolve_commitish, sanitize_key_to_filename
 from tools.devstack.core.proc import die, have_cmd, note, run
@@ -544,6 +545,7 @@ def build_sync_state(root: Path, conf, args: argparse.Namespace) -> dict[str, ob
         "schema": 1,
         "repository_root": str(root.resolve()),
         "github_mode": getattr(conf, "github_mode", "chained"),
+        "precommit_check": getattr(conf, "precommit_check", "auto"),
         "github_repo": repo,
         "base_ref": conf.base_remote_ref,
         "base_remote_sha": _remote_head_sha(root, base_remote, base_branch_name(conf.base_remote_ref)),
@@ -686,6 +688,7 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
         if not state["base_remote_sha"] or missing_local:
             details = ", ".join(missing_local) if missing_local else "base branch"
             die(f"cannot create plan: required local/base refs are missing: {details}")
+        run_precommit_gate(root, conf, getattr(args, "only", None))
         plan = write_sync_plan(Path(plan_path).expanduser(), state)
         print(f"wrote gh-sync plan: {Path(plan_path).expanduser()}")
         print(f"fingerprint: {plan['fingerprint']}")

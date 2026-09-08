@@ -47,6 +47,7 @@ class TestStackConf(unittest.TestCase):
                         "body_dir .devstack/pr-bodies/my-series",
                         "body_template .devstack/pr-body-template.md",
                         "body_detail full",
+                        "precommit_check off",
                         "ignore deadbeef",
                         "",
                         f"001-one {sha1}",
@@ -63,6 +64,7 @@ class TestStackConf(unittest.TestCase):
             self.assertEqual(conf.body_dir, ".devstack/pr-bodies/my-series")
             self.assertEqual(conf.body_template, ".devstack/pr-body-template.md")
             self.assertEqual(conf.body_detail, "full")
+            self.assertEqual(conf.precommit_check, "off")
             self.assertEqual(conf.github_mode, "chained")
             self.assertTrue(filtered_mode(conf))
             self.assertEqual(conf.ignore, ["deadbeef"])
@@ -102,6 +104,7 @@ class TestStackConf(unittest.TestCase):
 
             conf = read_conf(root)
             self.assertEqual(conf.body_detail, "compact")
+            self.assertEqual(conf.precommit_check, "auto")
             self.assertEqual(conf.entries[0].group, "core")
             self.assertEqual(conf.entries[0].group_title, "Retained core")
             self.assertEqual(conf.entries[2].group, "optimization")

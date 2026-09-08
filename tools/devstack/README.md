@@ -211,6 +211,21 @@ Clean and rebuild:
 
 ### Lint
 
+Run the repository's pinned pre-commit hooks for one stack layer. By default,
+hook fixes are applied to the checked-out layer; `--check` validates in a
+temporary worktree without modifying source files:
+
+```bash
+ds precommit --layer 1
+ds precommit --layer 1 --check
+```
+
+When `.pre-commit-config.yaml` exists, `ds gh-sync --plan` automatically runs
+the non-mutating check for every selected layer and refuses to create a plan if
+hooks fail or would modify files. Set `precommit_check off` in
+`.devstack/stack.conf` only when a repository intentionally cannot run its
+pre-commit configuration.
+
 Run repo lint checks (wraps the existing `tools/lint/*.py` scripts) against files changed vs `origin/main`:
 
 ```bash

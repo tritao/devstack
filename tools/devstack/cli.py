@@ -21,6 +21,7 @@ from tools.devstack.commands.github import (
     cmd_stack_status,
 )
 from tools.devstack.commands.lint import cmd_fix, cmd_lint
+from tools.devstack.commands.precommit import cmd_precommit
 from tools.devstack.commands.setup import cmd_doctor, cmd_machine_setup, cmd_provision, cmd_self_check, cmd_shell_alias, cmd_test
 from tools.devstack.commands.stack import (
     cmd_capture,
@@ -409,6 +410,10 @@ def build_parser() -> argparse.ArgumentParser:
     fx.add_argument("--codespell", action="store_true", help="Apply codespell fixes (writes to files)")
     fx.add_argument("--clang-style", default="file", help="Style passed to clang-format (default: file)")
 
+    pc = cmd("precommit", "Run repository pre-commit hooks for one stack layer.", category="Lint")
+    pc.add_argument("--layer", type=int, required=True, help="Stack layer to validate (1-based).")
+    pc.add_argument("--check", action="store_true", help="Validate in a temporary worktree without modifying source files.")
+
     ign = cmd("ignore", "Ignore a commit and regenerate PR branches (filtered mode).", category="Stack")
     ign.add_argument("commitish")
     ign.add_argument("--name")
@@ -539,6 +544,8 @@ def main(argv: list[str]) -> None:
             cmd_lint(ns)
         elif cmd == "fix":
             cmd_fix(ns)
+        elif cmd == "precommit":
+            cmd_precommit(ns)
         elif cmd == "ignore":
             cmd_ignore(ns)
         elif cmd == "extract":
