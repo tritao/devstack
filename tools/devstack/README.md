@@ -563,6 +563,21 @@ frontmatter. During `gh-sync`, published layers become GitHub PR links and
 unpublished layers retain readable branch fallbacks. The Patch Set block stays
 at the bottom of the body.
 
+Before publication, check PR descriptions for internal tool names, AI-generation
+language, and local absolute paths:
+
+```bash
+ds body-check
+```
+
+`ds gh-sync --plan` runs the same check automatically and reports the body file
+and line for each problem. Disable it only for repositories that intentionally
+need such terms:
+
+```text
+body_check off
+```
+
 To override the title, add a YAML frontmatter block at the top of the PR body file:
 
 ```md

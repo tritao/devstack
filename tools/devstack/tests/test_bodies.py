@@ -1,15 +1,36 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.devstack.commands.bodies import autogen_block, series_block, update_body_file
+from tools.devstack.commands.bodies import autogen_block, body_check_issues, series_block, update_body_file
 
 
 class TestBodies(unittest.TestCase):
+    def test_body_check_reports_internal_references_but_ignores_markers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+            body = root / "body.md"
+            body.write_text(
+                "<!-- DEVSTACK:SERIES-PR stack/one -->Visible title\n"
+                "Built with devstack.\n"
+                "Log: /media/user/build/output.txt\n",
+                encoding="utf-8",
+            )
+            entry = type("Entry", (), {"body": str(body), "key": "one", "branch": "stack/one"})()
+            conf = type("Conf", (), {"path": root / ".devstack" / "stack.conf", "body_dir": "", "entries": [entry]})()
+
+            issues = body_check_issues(conf)
+
+        self.assertEqual(2, len(issues))
+        self.assertIn(":2: internal tool name 'devstack'", issues[0])
+        self.assertIn(":3: local absolute path", issues[1])
+
     def test_series_block_is_inserted_after_frontmatter(self) -> None:
         series = series_block(
             "Selection refactoring series",

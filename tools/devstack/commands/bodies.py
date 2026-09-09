@@ -89,6 +89,46 @@ def autogen_block(
 
 AUTOGEN_RE = re.compile(r"<!-- AUTOGEN:BEGIN -->[\s\S]*?<!-- AUTOGEN:END -->", re.MULTILINE)
 SERIES_RE = re.compile(r"<!-- AUTOGEN:SERIES:BEGIN -->[\s\S]*?<!-- AUTOGEN:SERIES:END -->", re.MULTILINE)
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->")
+BODY_FORBIDDEN = (
+    (re.compile(r"\bdevstack\b", re.IGNORECASE), "internal tool name 'devstack'"),
+    (re.compile(r"\bcodex\b", re.IGNORECASE), "AI tool name 'Codex'"),
+    (re.compile(r"\bchatgpt\b", re.IGNORECASE), "AI tool name 'ChatGPT'"),
+    (re.compile(r"\bAI[- ]generated\b", re.IGNORECASE), "AI-generation language"),
+    (re.compile(r"(?<![\w.])/(?:home|media|tmp|Users)/\S+"), "local absolute path"),
+)
+
+
+def body_check_issues(conf, entries=None) -> list[str]:
+    selected = conf.entries if entries is None else entries
+    issues: list[str] = []
+    for entry in selected:
+        path = resolved_body_file(conf, entry)
+        if not path.is_file():
+            continue
+        for number, raw_line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            line = HTML_COMMENT_RE.sub("", raw_line)
+            for pattern, label in BODY_FORBIDDEN:
+                match = pattern.search(line)
+                if match:
+                    issues.append(f"{path}:{number}: {label}: {match.group(0)}")
+    return issues
+
+
+def run_body_check(conf, entries=None) -> None:
+    if getattr(conf, "body_check", "auto") == "off":
+        return
+    issues = body_check_issues(conf, entries)
+    if issues:
+        for issue in issues:
+            print(f"ERROR: {issue}")
+        die("PR body check failed; remove internal implementation details or set `body_check off`")
+
+
+def cmd_body_check(args: argparse.Namespace) -> None:
+    conf = read_conf(repo_root())
+    run_body_check(conf)
+    print(f"PR body check: ok ({len(conf.entries)} bodies)")
 
 
 def series_block(title: str, summary: str, entries: list[tuple[str, str]]) -> str:

@@ -9,7 +9,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from tools.devstack.core.proc import die
-from tools.devstack.commands.bodies import cmd_body_context, cmd_body_prune, cmd_body_refresh
+from tools.devstack.commands.bodies import cmd_body_check, cmd_body_context, cmd_body_prune, cmd_body_refresh
 from tools.devstack.commands.build import cmd_build
 from tools.devstack.commands.dependencies import cmd_dep_pin, cmd_dep_status
 from tools.devstack.commands.github import (
@@ -178,6 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
         "Refresh PR body markdown files with an AUTOGEN block (commits/depends-on metadata).",
         category="PR Bodies",
     )
+    cmd("body-check", "Check PR bodies for internal tooling and local-environment references.", category="PR Bodies")
     bc = cmd("body-context", "Print review context (commits/churn) for a layer.", category="PR Bodies")
     bp = cmd("body-prune", "Delete unreferenced PR body files under the configured body dir (dry-run by default).", category="PR Bodies")
     bp.add_argument("--apply", action="store_true", help="Delete files (default is dry-run).")
@@ -516,6 +517,8 @@ def main(argv: list[str]) -> None:
             cmd_rebase(ns)
         elif cmd == "body-refresh":
             cmd_body_refresh(ns)
+        elif cmd == "body-check":
+            cmd_body_check(ns)
         elif cmd == "body-context":
             cmd_body_context(ns)
         elif cmd == "body-prune":

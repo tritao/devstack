@@ -31,6 +31,7 @@ class StackConfig:
     series_title: str
     series_summary: str
     draft_mode: str
+    body_check: str
     precommit_check: str
     github_mode: str
     github_repo: str
@@ -77,6 +78,7 @@ def read_conf(root: Path) -> StackConfig:
     series_title = "PR series"
     series_summary = ""
     draft_mode = "stacked"
+    body_check = "auto"
     precommit_check = "auto"
     github_mode = "chained"
     github_repo = ""
@@ -134,6 +136,11 @@ def read_conf(root: Path) -> StackConfig:
             if len(parts) != 2 or parts[1] not in ("stacked", "all", "off"):
                 die(f"bad draft_mode directive in {conf_path}: {raw} (expected stacked|all|off)")
             draft_mode = parts[1]
+            continue
+        if parts[0] == "body_check":
+            if len(parts) != 2 or parts[1] not in ("auto", "off"):
+                die(f"bad body_check directive in {conf_path}: {raw} (expected auto|off)")
+            body_check = parts[1]
             continue
         if parts[0] == "precommit_check":
             if len(parts) != 2 or parts[1] not in ("auto", "off"):
@@ -257,6 +264,7 @@ def read_conf(root: Path) -> StackConfig:
         series_title=series_title,
         series_summary=series_summary,
         draft_mode=draft_mode,
+        body_check=body_check,
         precommit_check=precommit_check,
         github_mode=github_mode,
         github_repo=github_repo,

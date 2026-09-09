@@ -266,6 +266,7 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str,
     lines.append("#   series_summary <text>          Add a linked series overview to the top of each PR body")
     lines.append("#   series_title <text>            Heading for the series overview (default: PR series)")
     lines.append("#   draft_mode stacked|all|off     Draft policy (default: stacked; layers 2+ are drafts)")
+    lines.append("#   body_check auto|off            Gate publication plans on PR-body lint (default: auto)")
     lines.append("#   precommit_check auto|off       Gate publication plans on pre-commit (default: auto)")
     lines.append("#   github_mode chained|native     GitHub publication backend (default: chained)")
     lines.append("#   github_repo <owner/repo>        Explicit target repository (optional)")
@@ -306,6 +307,9 @@ def write_conf(root: Path, conf: StackConfig, entries: list[tuple[str, str, str,
         lines.append(f"series_summary {conf.series_summary}")
     if conf.draft_mode != "stacked":
         lines.append(f"draft_mode {conf.draft_mode}")
+        lines.append("")
+    if conf.body_check != "auto":
+        lines.append(f"body_check {conf.body_check}")
         lines.append("")
     if conf.precommit_check != "auto":
         lines.append(f"precommit_check {conf.precommit_check}")

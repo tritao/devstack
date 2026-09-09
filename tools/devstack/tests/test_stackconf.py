@@ -50,6 +50,7 @@ class TestStackConf(unittest.TestCase):
                         "series_title My refactoring series",
                         "series_summary This series makes the code easier to maintain.",
                         "draft_mode all",
+                        "body_check off",
                         "precommit_check off",
                         "ignore deadbeef",
                         "",
@@ -70,6 +71,7 @@ class TestStackConf(unittest.TestCase):
             self.assertEqual(conf.series_title, "My refactoring series")
             self.assertEqual(conf.series_summary, "This series makes the code easier to maintain.")
             self.assertEqual(conf.draft_mode, "all")
+            self.assertEqual(conf.body_check, "off")
             self.assertEqual(conf.precommit_check, "off")
             self.assertEqual(conf.github_mode, "chained")
             self.assertTrue(filtered_mode(conf))
@@ -113,6 +115,7 @@ class TestStackConf(unittest.TestCase):
             self.assertEqual(conf.series_title, "PR series")
             self.assertEqual(conf.series_summary, "")
             self.assertEqual(conf.draft_mode, "stacked")
+            self.assertEqual(conf.body_check, "auto")
             self.assertEqual(conf.precommit_check, "auto")
             self.assertEqual(conf.entries[0].group, "core")
             self.assertEqual(conf.entries[0].group_title, "Retained core")
