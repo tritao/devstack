@@ -15,8 +15,8 @@ class TestGhSyncUpdate(unittest.TestCase):
         second = type("Entry", (), {"branch": "stack/second"})()
         conf = type("Conf", (), {"entries": [first, second]})()
         body = (
-            "1. <!-- DEVSTACK:SERIES-PR stack/first -->First change\n"
-            "2. <!-- DEVSTACK:SERIES-PR stack/second -->Second change\n"
+            "> 1. <!-- DEVSTACK:SERIES-PR stack/first -->First change\n"
+            "> 2. <!-- DEVSTACK:SERIES-PR stack/second -->Second change\n"
         )
         with (
             patch("tools.devstack.commands.github.gh_head_ref", side_effect=["owner:first", "owner:second"]),
@@ -24,8 +24,8 @@ class TestGhSyncUpdate(unittest.TestCase):
         ):
             resolved = resolve_body_series_links(Path("/repo"), conf, body, "org/repo", "origin")
 
-        self.assertIn("1. [#12 — First change](https://github.com/org/repo/pull/12)", resolved)
-        self.assertIn("2. `stack/second` — Second change", resolved)
+        self.assertIn("> 1. [#12 — First change](https://github.com/org/repo/pull/12)", resolved)
+        self.assertIn("> 2. `stack/second` — Second change", resolved)
 
     def test_resolves_published_predecessor_to_pr_link(self) -> None:
         first = type("Entry", (), {"branch": "stack/first"})()

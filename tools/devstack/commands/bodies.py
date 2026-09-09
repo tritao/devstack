@@ -98,12 +98,13 @@ def series_block(title: str, summary: str, entries: list[tuple[str, str]]) -> st
         "<!-- AUTOGEN:SERIES:BEGIN -->",
         f"## {title or 'PR series'}",
         "",
-        summary,
-        "",
+        "> [!NOTE]",
+        f"> {summary}",
+        ">",
     ]
     for index, (branch, title) in enumerate(entries, start=1):
-        lines.append(f"{index}. <!-- DEVSTACK:SERIES-PR {branch} -->{title}")
-    lines.extend(["", "Please review and merge the PRs in order.", "<!-- AUTOGEN:SERIES:END -->"])
+        lines.append(f"> {index}. <!-- DEVSTACK:SERIES-PR {branch} -->{title}")
+    lines.extend([">", "> Please review and merge the PRs in order.", "<!-- AUTOGEN:SERIES:END -->"])
     return "\n".join(lines)
 
 

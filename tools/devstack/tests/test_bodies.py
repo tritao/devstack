@@ -24,7 +24,8 @@ class TestBodies(unittest.TestCase):
 
         self.assertLess(body.index("<!-- AUTOGEN:SERIES:BEGIN -->"), body.index("Specific description."))
         self.assertIn("## Selection refactoring series", body)
-        self.assertIn("<!-- DEVSTACK:SERIES-PR stack/two -->Second change", body)
+        self.assertIn("> [!NOTE]", body)
+        self.assertIn("> 2. <!-- DEVSTACK:SERIES-PR stack/two -->Second change", body)
         self.assertTrue(body.rstrip().endswith("<!-- AUTOGEN -->"))
 
     def test_new_body_omits_testing_section(self) -> None:
