@@ -6,10 +6,27 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.devstack.commands.github import cmd_gh_sync, resolve_body_dependency_link
+from tools.devstack.commands.github import cmd_gh_sync, resolve_body_dependency_link, resolve_body_series_links
 
 
 class TestGhSyncUpdate(unittest.TestCase):
+    def test_resolves_series_markers_to_pr_links_and_branch_fallbacks(self) -> None:
+        first = type("Entry", (), {"branch": "stack/first"})()
+        second = type("Entry", (), {"branch": "stack/second"})()
+        conf = type("Conf", (), {"entries": [first, second]})()
+        body = (
+            "1. <!-- DEVSTACK:SERIES-PR stack/first -->First change\n"
+            "2. <!-- DEVSTACK:SERIES-PR stack/second -->Second change\n"
+        )
+        with (
+            patch("tools.devstack.commands.github.gh_head_ref", side_effect=["owner:first", "owner:second"]),
+            patch("tools.devstack.commands.github.gh_pr_number_for_head", side_effect=["12", ""]),
+        ):
+            resolved = resolve_body_series_links(Path("/repo"), conf, body, "org/repo", "origin")
+
+        self.assertIn("1. [#12 — First change](https://github.com/org/repo/pull/12)", resolved)
+        self.assertIn("2. `stack/second` — Second change", resolved)
+
     def test_resolves_published_predecessor_to_pr_link(self) -> None:
         first = type("Entry", (), {"branch": "stack/first"})()
         second = type("Entry", (), {"branch": "stack/second"})()

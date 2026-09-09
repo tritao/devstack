@@ -550,6 +550,19 @@ body_detail full
 
 During `gh-sync`, a published predecessor branch in the dependency notice is replaced with a link to its GitHub PR. Unpublished predecessors retain the branch name until a later sync.
 
+To add a generated overview at the top of every PR body, configure its short
+goal statement:
+
+```text
+series_title Selection refactoring series
+series_summary This series refactors the selection system to make the code easier to understand, review, and maintain while preserving existing behavior.
+```
+
+`body-refresh` adds the overview and table of contents after the title
+frontmatter. During `gh-sync`, published layers become GitHub PR links and
+unpublished layers retain readable branch fallbacks. The Patch Set block stays
+at the bottom of the body.
+
 To override the title, add a YAML frontmatter block at the top of the PR body file:
 
 ```md

@@ -6,10 +6,27 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.devstack.commands.bodies import autogen_block, update_body_file
+from tools.devstack.commands.bodies import autogen_block, series_block, update_body_file
 
 
 class TestBodies(unittest.TestCase):
+    def test_series_block_is_inserted_after_frontmatter(self) -> None:
+        series = series_block(
+            "Selection refactoring series",
+            "This series refactors selection to make the code more maintainable.",
+            [("stack/one", "First change"), ("stack/two", "Second change")],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            body_path = Path(directory) / "body.md"
+            body_path.write_text('---\ntitle: "First change"\n---\n\nSpecific description.\n', encoding="utf-8")
+            update_body_file(body_path, "<!-- AUTOGEN -->", series=series)
+            body = body_path.read_text(encoding="utf-8")
+
+        self.assertLess(body.index("<!-- AUTOGEN:SERIES:BEGIN -->"), body.index("Specific description."))
+        self.assertIn("## Selection refactoring series", body)
+        self.assertIn("<!-- DEVSTACK:SERIES-PR stack/two -->Second change", body)
+        self.assertTrue(body.rstrip().endswith("<!-- AUTOGEN -->"))
+
     def test_new_body_omits_testing_section(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             body_path = Path(directory) / "body.md"

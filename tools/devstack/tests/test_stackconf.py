@@ -47,6 +47,8 @@ class TestStackConf(unittest.TestCase):
                         "body_dir .devstack/pr-bodies/my-series",
                         "body_template .devstack/pr-body-template.md",
                         "body_detail full",
+                        "series_title My refactoring series",
+                        "series_summary This series makes the code easier to maintain.",
                         "draft_mode all",
                         "precommit_check off",
                         "ignore deadbeef",
@@ -65,6 +67,8 @@ class TestStackConf(unittest.TestCase):
             self.assertEqual(conf.body_dir, ".devstack/pr-bodies/my-series")
             self.assertEqual(conf.body_template, ".devstack/pr-body-template.md")
             self.assertEqual(conf.body_detail, "full")
+            self.assertEqual(conf.series_title, "My refactoring series")
+            self.assertEqual(conf.series_summary, "This series makes the code easier to maintain.")
             self.assertEqual(conf.draft_mode, "all")
             self.assertEqual(conf.precommit_check, "off")
             self.assertEqual(conf.github_mode, "chained")
@@ -106,6 +110,8 @@ class TestStackConf(unittest.TestCase):
 
             conf = read_conf(root)
             self.assertEqual(conf.body_detail, "compact")
+            self.assertEqual(conf.series_title, "PR series")
+            self.assertEqual(conf.series_summary, "")
             self.assertEqual(conf.draft_mode, "stacked")
             self.assertEqual(conf.precommit_check, "auto")
             self.assertEqual(conf.entries[0].group, "core")

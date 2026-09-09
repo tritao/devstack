@@ -28,6 +28,8 @@ class StackConfig:
     body_dir: str
     body_template: str
     body_detail: str
+    series_title: str
+    series_summary: str
     draft_mode: str
     precommit_check: str
     github_mode: str
@@ -72,6 +74,8 @@ def read_conf(root: Path) -> StackConfig:
     body_dir = ""
     body_template = ""
     body_detail = "compact"
+    series_title = "PR series"
+    series_summary = ""
     draft_mode = "stacked"
     precommit_check = "auto"
     github_mode = "chained"
@@ -115,6 +119,16 @@ def read_conf(root: Path) -> StackConfig:
             if len(parts) != 2 or parts[1] not in ("compact", "full"):
                 die(f"bad body_detail directive in {conf_path}: {raw} (expected compact|full)")
             body_detail = parts[1]
+            continue
+        if parts[0] == "series_summary":
+            if len(parts) < 2:
+                die(f"bad series_summary directive in {conf_path}: {raw}")
+            series_summary = line.split(maxsplit=1)[1]
+            continue
+        if parts[0] == "series_title":
+            if len(parts) < 2:
+                die(f"bad series_title directive in {conf_path}: {raw}")
+            series_title = line.split(maxsplit=1)[1]
             continue
         if parts[0] == "draft_mode":
             if len(parts) != 2 or parts[1] not in ("stacked", "all", "off"):
@@ -240,6 +254,8 @@ def read_conf(root: Path) -> StackConfig:
         body_dir=body_dir,
         body_template=body_template,
         body_detail=body_detail,
+        series_title=series_title,
+        series_summary=series_summary,
         draft_mode=draft_mode,
         precommit_check=precommit_check,
         github_mode=github_mode,

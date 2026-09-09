@@ -69,6 +69,25 @@ def resolve_body_dependency_link(root: Path, conf, entry, body_text: str, repo: 
     )
 
 
+def resolve_body_series_links(root: Path, conf, body_text: str, repo: str, push_remote: str) -> str:
+    """Turn generated series markers into PR links or readable branch fallbacks."""
+    if not repo:
+        return body_text
+    for entry in conf.entries:
+        marker = f"<!-- DEVSTACK:SERIES-PR {entry.branch} -->"
+        if marker not in body_text:
+            continue
+        head_ref = gh_head_ref(root, base_repo=repo, branch=entry.branch, push_remote=push_remote)
+        pr_number = gh_pr_number_for_head(root, head_ref, repo)
+        if pr_number:
+            pattern = re.escape(marker) + r"([^\n]+)"
+            url = f"https://github.com/{repo}/pull/{pr_number}"
+            body_text = re.sub(pattern, lambda match: f"[#{pr_number} — {match.group(1)}]({url})", body_text)
+        else:
+            body_text = body_text.replace(marker, f"`{entry.branch}` — ")
+    return body_text
+
+
 def shlex_quote(s: str) -> str:
     return shlex.quote(s)
 
@@ -797,6 +816,9 @@ def cmd_gh_sync(args: argparse.Namespace) -> None:
             body_text = body_file.read_text(encoding="utf-8", errors="replace")
             resolved_bodies[entry.branch] = resolve_body_dependency_link(
                 root, conf, entry, body_text, repo, push_remote
+            )
+            resolved_bodies[entry.branch] = resolve_body_series_links(
+                root, conf, resolved_bodies[entry.branch], repo, push_remote
             )
 
     if apply:

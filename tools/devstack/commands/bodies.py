@@ -7,7 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from tools.devstack.core.frontmatter import title_with_number
+from tools.devstack.core.frontmatter import title_from_body_frontmatter, title_with_number
 from tools.devstack.core.git import ensure_commit_exists, git, repo_root
 from tools.devstack.core.proc import die, run
 from tools.devstack.core.stackconf import base_branch_name, filtered_mode, key_number, read_conf, resolved_body_file
@@ -88,12 +88,43 @@ def autogen_block(
 
 
 AUTOGEN_RE = re.compile(r"<!-- AUTOGEN:BEGIN -->[\s\S]*?<!-- AUTOGEN:END -->", re.MULTILINE)
+SERIES_RE = re.compile(r"<!-- AUTOGEN:SERIES:BEGIN -->[\s\S]*?<!-- AUTOGEN:SERIES:END -->", re.MULTILINE)
+
+
+def series_block(title: str, summary: str, entries: list[tuple[str, str]]) -> str:
+    if not summary or len(entries) < 2:
+        return ""
+    lines = [
+        "<!-- AUTOGEN:SERIES:BEGIN -->",
+        f"## {title or 'PR series'}",
+        "",
+        summary,
+        "",
+    ]
+    for index, (branch, title) in enumerate(entries, start=1):
+        lines.append(f"{index}. <!-- DEVSTACK:SERIES-PR {branch} -->{title}")
+    lines.extend(["", "Please review and merge the PRs in order.", "<!-- AUTOGEN:SERIES:END -->"])
+    return "\n".join(lines)
+
+
+def _insert_after_frontmatter(content: str, block: str) -> str:
+    if not block:
+        return content
+    lines = content.splitlines(keepends=True)
+    if lines and lines[0].strip() == "---":
+        for index in range(1, len(lines)):
+            if lines[index].strip() == "---":
+                prefix = "".join(lines[: index + 1]).rstrip()
+                remainder = "".join(lines[index + 1 :]).lstrip("\n")
+                return f"{prefix}\n\n{block}\n\n{remainder}".rstrip() + "\n"
+    return f"{block}\n\n{content.lstrip()}".rstrip() + "\n"
 
 
 def update_body_file(
     body_path: Path,
     autogen: str,
     *,
+    series: str = "",
     title: str = "",
     template_path: Path | None = None,
 ) -> None:
@@ -105,7 +136,8 @@ def update_body_file(
             content = template_path.read_text(encoding="utf-8", errors="replace")
             content = content.replace("{{ title }}", json.dumps(title))
             content = content.replace("{{ autogen }}", autogen)
-            body_path.write_text(content.rstrip() + "\n", encoding="utf-8")
+            content = SERIES_RE.sub("", content).strip()
+            body_path.write_text(_insert_after_frontmatter(content.rstrip() + "\n", series), encoding="utf-8")
             print(f"created {body_path} from {template_path}")
             return
         frontmatter = ""
@@ -123,22 +155,24 @@ def update_body_file(
                 "",
             ]
         )
-        body_path.write_text(content + "\n", encoding="utf-8")
+        body_path.write_text(_insert_after_frontmatter(content + "\n", series), encoding="utf-8")
         print(f"created {body_path}")
         return
 
     content = body_path.read_text(encoding="utf-8", errors="replace")
+    content = SERIES_RE.sub("", content).strip() + "\n"
     if "<!-- AUTOGEN:BEGIN -->" in content and "<!-- AUTOGEN:END -->" in content:
         stripped = AUTOGEN_RE.sub("", content).rstrip()
         if not autogen:
             new_content = stripped + "\n" if stripped else ""
         else:
             new_content = (stripped + "\n\n" + autogen + "\n") if stripped else (autogen + "\n")
-        body_path.write_text(new_content, encoding="utf-8")
+        body_path.write_text(_insert_after_frontmatter(new_content, series), encoding="utf-8")
         print(f"updated {body_path}")
         return
 
-    body_path.write_text(content.rstrip() + "\n\n" + autogen + "\n", encoding="utf-8")
+    content = content.rstrip() + "\n\n" + autogen + "\n"
+    body_path.write_text(_insert_after_frontmatter(content, series), encoding="utf-8")
     print(f"appended {body_path}")
 
 
@@ -157,6 +191,14 @@ def cmd_body_refresh(args: argparse.Namespace) -> None:
     prev = conf.base_remote_ref
     pr_base = base_display
     total = len(conf.entries)
+    series_entries: list[tuple[str, str]] = []
+    for entry in conf.entries:
+        body_path = resolved_body_file(conf, entry)
+        to_ref = entry.branch if filtered_mode(conf) else entry.sha
+        raw_title = git(["show", "-s", "--format=%s", to_ref], cwd=root) or entry.branch
+        title = title_from_body_frontmatter(body_path) if body_path.is_file() else ""
+        series_entries.append((entry.branch, title or title_with_number(raw_title, key_number(entry.key))))
+    series = series_block(conf.series_title, conf.series_summary, series_entries)
     for idx, entry in enumerate(conf.entries, start=1):
         group_entries = [candidate for candidate in conf.entries if candidate.group == entry.group]
         group_pos = group_entries.index(entry) + 1 if entry.group else 0
@@ -189,7 +231,7 @@ def cmd_body_refresh(args: argparse.Namespace) -> None:
             die(f"missing body file for {entry.branch}: {body_path}")
         raw_title = git(["show", "-s", "--format=%s", to_ref], cwd=root) or entry.branch
         title = title_with_number(raw_title, key_number(entry.key))
-        update_body_file(body_path, autogen, title=title, template_path=template_path)
+        update_body_file(body_path, autogen, series=series, title=title, template_path=template_path)
         prev = entry.branch if filtered_mode(conf) else entry.sha
         pr_base = entry.branch
 
