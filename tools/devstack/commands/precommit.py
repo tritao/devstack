@@ -51,13 +51,36 @@ def check_layer_in_temporary_worktree(root: Path, conf: StackConfig, layer: int)
             run(["git", "worktree", "remove", "--force", str(worktree)], cwd=root, check=False, capture=True)
 
 
+def check_layer_has_no_precommit_bot_commits(root: Path, conf: StackConfig, layer: int) -> None:
+    """Reject fixup commits that should be folded into the commits they repair."""
+    base, tip = layer_range(root, conf, layer)
+    records = git(["log", "--format=%h%x00%ae%x00%an%x00%s", f"{base}..{tip}"], cwd=root)
+    offenders: list[str] = []
+    for record in records.splitlines():
+        fields = record.split("\0", 3)
+        if len(fields) != 4:
+            continue
+        sha, email, author, subject = fields
+        identity = f"{email} {author}".lower()
+        if "pre-commit-ci" in identity or "pre-commit.ci" in identity:
+            offenders.append(f"{sha} {subject}")
+    if offenders:
+        details = "\n".join(f"  {offender}" for offender in offenders)
+        die(
+            f"layer {layer} contains pre-commit bot fixup commits:\n{details}\n"
+            "Fold these fixes into the commits they repair before publication."
+        )
+
+
 def run_precommit_gate(root: Path, conf: StackConfig, only: int | None) -> None:
-    if getattr(conf, "precommit_check", "auto") == "off" or not (root / ".pre-commit-config.yaml").is_file():
+    if getattr(conf, "precommit_check", "auto") == "off":
         return
     layers = [only] if only is not None else list(range(1, len(conf.entries) + 1))
     for layer in layers:
         print(f"pre-commit: checking layer {layer}/{len(conf.entries)}")
-        check_layer_in_temporary_worktree(root, conf, layer)
+        check_layer_has_no_precommit_bot_commits(root, conf, layer)
+        if (root / ".pre-commit-config.yaml").is_file():
+            check_layer_in_temporary_worktree(root, conf, layer)
 
 
 def cmd_precommit(args: argparse.Namespace) -> None:

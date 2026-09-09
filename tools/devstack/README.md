@@ -226,6 +226,10 @@ hooks fail or would modify files. Set `precommit_check off` in
 `.devstack/stack.conf` only when a repository intentionally cannot run its
 pre-commit configuration.
 
+The publication gate also rejects commits authored by pre-commit.ci. Those bot
+fixups leave the final tree valid but make review history noisy; fold their
+changes into the commits they repair before creating a sync plan.
+
 Run repo lint checks (wraps the existing `tools/lint/*.py` scripts) against files changed vs `origin/main`:
 
 ```bash
